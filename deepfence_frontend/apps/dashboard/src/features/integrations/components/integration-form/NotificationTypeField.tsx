@@ -1,15 +1,18 @@
+import { upperCase } from 'lodash-es';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Listbox, ListboxOption } from 'ui-components';
+import { Checkbox, Listbox, ListboxOption, Tooltip } from 'ui-components';
 
 import { ModelIntegrationListResp } from '@/api/generated';
+import { InfoStandardIcon } from '@/components/icons/common/InfoStandard';
 import { ScanTypeEnum } from '@/types/common';
 
 import { AdvancedFilters } from './AdvancedFilter';
 import { FieldSelection } from './FieldSelection';
 import { TextInputType } from './TextInputType';
 import {
-  getDisplayNotification,
+  canSendScanSummary,
+  getNotificationPrettyName,
   IntegrationType,
   isCloudComplianceNotification,
   isCloudTrailNotification,
@@ -18,6 +21,24 @@ import {
   isVulnerabilityNotification,
 } from './utils';
 
+const SendScanSummaryCheckbox = ({ sendSummaryOnly }: { sendSummaryOnly: boolean }) => {
+  const [checked, setChecked] = useState(sendSummaryOnly);
+  return (
+    <div className="flex gap-x-1.5 items-center col-span-2">
+      <Checkbox
+        name="sendSummary"
+        label="Send scan summary only?"
+        checked={checked}
+        onCheckedChange={(check: boolean) => setChecked(check)}
+      />
+      <Tooltip content="By default complete scan results are sent. If you wish to send only scan summary, check this checkbox.">
+        <div className="w-4 h-4">
+          <InfoStandardIcon />
+        </div>
+      </Tooltip>
+    </div>
+  );
+};
 export const NotificationTypeField = ({
   fieldErrors,
   defaultNotificationType,
@@ -30,7 +51,7 @@ export const NotificationTypeField = ({
   const [notificationType, setNotificationType] = useState<ScanTypeEnum | string>(
     defaultNotificationType,
   );
-  const [cloud, setCloud] = useState<string>('AWS');
+  const [cloud, setCloud] = useState<string>(data?.filters?.cloud_provider ?? 'aws');
 
   const { integrationType } = useParams() as {
     integrationType: string;
@@ -57,7 +78,7 @@ export const NotificationTypeField = ({
         placeholder="Select notification type"
         label="Notification Type"
         getDisplayValue={() => {
-          return getDisplayNotification(notificationType);
+          return getNotificationPrettyName(notificationType);
         }}
         required
       >
@@ -65,7 +86,7 @@ export const NotificationTypeField = ({
           (notification) => {
             return (
               <ListboxOption key={notification} value={notification}>
-                {getDisplayNotification(notification)}
+                {getNotificationPrettyName(notification)}
               </ListboxOption>
             );
           },
@@ -80,6 +101,10 @@ export const NotificationTypeField = ({
           ) : null} */}
       </Listbox>
 
+      {canSendScanSummary(notificationType, integrationType) ? (
+        <SendScanSummaryCheckbox sendSummaryOnly={data?.config?.send_summary ?? false} />
+      ) : null}
+
       {isCloudComplianceNotification(notificationType) &&
         integrationType !== IntegrationType.s3 && (
           <Listbox
@@ -92,13 +117,13 @@ export const NotificationTypeField = ({
             }}
             placeholder="Select provider"
             getDisplayValue={() => {
-              return cloud;
+              return upperCase(cloud);
             }}
           >
-            {['AWS', 'GCP', 'AZURE'].map((cloud) => {
+            {['aws', 'gcp', 'azure'].map((cloud) => {
               return (
                 <ListboxOption value={cloud} key={cloud}>
-                  {cloud}
+                  {upperCase(cloud)}
                 </ListboxOption>
               );
             })}

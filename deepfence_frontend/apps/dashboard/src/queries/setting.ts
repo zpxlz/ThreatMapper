@@ -4,6 +4,7 @@ import { getDiagnosisApiClient, getSettingsApiClient, getUserApiClient } from '@
 import { ModelGetAuditLogsRequest } from '@/api/generated';
 import { get403Message, getResponseErrors } from '@/utils/403';
 import { apiWrapper } from '@/utils/api';
+import { isThreatMapper } from '@/utils/version';
 
 export const settingQueries = createQueryKeys('setting', {
   listScheduledJobs: () => {
@@ -254,29 +255,59 @@ export const settingQueries = createQueryKeys('setting', {
       },
     };
   },
-  getThreatMapperLicense: () => {
+  getDatabaseInfo: () => {
     return {
-      queryKey: ['getThreatMapperLicense'],
-      queryFn: async () => {
-        const api = apiWrapper({
-          fn: getSettingsApiClient().getThreatMapperLicense,
-        });
+      queryKey: ['getDatabaseInfo'],
+      queryFn: async (): Promise<{
+        lastUpdated: Date | undefined;
+        daysOld: number | undefined;
+        showBanner: boolean;
+        data:
+        | Awaited<
+          ReturnType<ReturnType<typeof getSettingsApiClient>['getDatabaseInfo']>
+        >
+        | undefined;
+      }> => {
+        if (!isThreatMapper) {
+          return {
+            lastUpdated: undefined,
+            daysOld: undefined,
+            showBanner: false,
+            data: undefined,
+          };
+        }
+        const api = apiWrapper({ fn: getSettingsApiClient().getDatabaseInfo });
         const response = await api();
 
         if (!response.ok) {
-          if (
-            response.error.response.status === 403 ||
-            response.error.response.status === 400
-          ) {
-            const message = await get403Message(response.error);
-            return {
-              message,
-            };
-          }
-          throw response.error;
+          console.error('Failed to fetch threat intel database info');
+          console.error(response.error);
+          return {
+            lastUpdated: undefined,
+            daysOld: undefined,
+            showBanner: false,
+            data: undefined,
+          };
         }
 
-        return response.value;
+        const data = response.value;
+
+        const lastUpdated = data.vulnerability_db_updated_at
+          ? new Date(data.vulnerability_db_updated_at)
+          : undefined;
+
+        const daysOld = lastUpdated
+          ? Math.floor(
+            (new Date().getTime() - lastUpdated.getTime()) / (1000 * 60 * 60 * 24),
+          )
+          : undefined;
+
+        return {
+          lastUpdated,
+          daysOld,
+          showBanner: isThreatMapper && !!daysOld && daysOld >= 1,
+          data: response.value,
+        };
       },
     };
   },

@@ -1,6 +1,8 @@
 import { useSuspenseQuery } from '@suspensive/react-query';
+import { startCase } from 'lodash-es';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { cn } from 'tailwind-preset';
 import {
   Badge,
   Button,
@@ -23,13 +25,16 @@ import {
   ConfigureScanModal,
   ConfigureScanModalProps,
 } from '@/components/ConfigureScanModal';
+import { DetailModal, useDetailModalState } from '@/components/detail-modal-stack';
 import { DFLink } from '@/components/DFLink';
 import { FilterBadge } from '@/components/filters/FilterBadge';
 import { SearchableClusterList } from '@/components/forms/SearchableClusterList';
 import { SearchableHostList } from '@/components/forms/SearchableHostList';
+import { SearchableUserDefinedTagList } from '@/components/forms/SearchableUserDefinedTagList';
 import { ArrowUpCircleLine } from '@/components/icons/common/ArrowUpCircleLine';
 import { CaretDown } from '@/components/icons/common/CaretDown';
 import { FilterIcon } from '@/components/icons/common/Filter';
+import { TagOutlineIcon } from '@/components/icons/common/TagOutline';
 import { TimesIcon } from '@/components/icons/common/Times';
 import { ScanStatusBadge } from '@/components/ScanStatusBadge';
 import { MalwareIcon } from '@/components/sideNavigation/icons/Malware';
@@ -38,7 +43,6 @@ import { SecretsIcon } from '@/components/sideNavigation/icons/Secrets';
 import { VulnerabilityIcon } from '@/components/sideNavigation/icons/Vulnerability';
 import { TruncatedText } from '@/components/TruncatedText';
 import { FilterWrapper } from '@/features/common/FilterWrapper';
-import { NodeDetailsStackedModal } from '@/features/topology/components/NodeDetailsStackedModal';
 import { SearchableCloudAccountForHost } from '@/features/topology/data-components/tables/SearchableCloudAccountForHost';
 import { queries } from '@/queries';
 import {
@@ -68,7 +72,7 @@ const useGetAgentVersions = () => {
 export const HostsTable = () => {
   const [selectedNodes, setSelectedNodes] = useState<ModelHost[]>([]);
   const [searchParams] = useSearchParams();
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
 
   return (
     <div className="px-4 pb-4">
@@ -97,6 +101,7 @@ export const HostsTable = () => {
           onClick={() => {
             setFiltersExpanded((prev) => !prev);
           }}
+          data-testid="filterButtonIdForTable"
         >
           Filter
         </Button>
@@ -240,6 +245,7 @@ enum FILTER_SEARCHPARAMS_KEYS_ENUM {
   agentRunning = 'agentRunning',
   clusters = 'clusters',
   hosts = 'hosts',
+  userDefinedTags = 'userDefinedTags',
 }
 
 const FILTER_SEARCHPARAMS_DYNAMIC_KEYS = [
@@ -256,12 +262,28 @@ const FILTER_SEARCHPARAMS: Record<FILTER_SEARCHPARAMS_KEYS_ENUM, string> = {
   agentRunning: 'Agent running',
   clusters: 'Cluster',
   hosts: 'Host',
+  userDefinedTags: 'Custom tags',
 };
 
 const getAppliedFiltersCount = (searchParams: URLSearchParams) => {
   return Object.keys(FILTER_SEARCHPARAMS).reduce((prev, curr) => {
     return prev + searchParams.getAll(curr).length;
   }, 0);
+};
+
+const getPrettyNameForAppliedFilters = ({
+  key,
+  value,
+}: {
+  key: string;
+  value: string;
+}) => {
+  switch (key) {
+    case 'cloudProvider':
+      return CLOUD_PROVIDERS.find((item) => item.value === value)?.label ?? '';
+    default:
+      return value;
+  }
 };
 
 function Filters() {
@@ -295,13 +317,6 @@ function Filters() {
         <SearchableHostList
           scanType={'none'}
           defaultSelectedHosts={searchParams.getAll('hosts')}
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('hosts');
-              prev.delete('page');
-              return prev;
-            });
-          }}
           onChange={(value) => {
             setSearchParams((prev) => {
               prev.delete('hosts');
@@ -315,7 +330,6 @@ function Filters() {
         />
         <Combobox
           value={searchParams.get('vulnerabilityScanStatus')}
-          nullable
           onQueryChange={(query) => {
             setVulnerabilityScanStatusSearchText(query);
           }}
@@ -352,7 +366,6 @@ function Filters() {
         </Combobox>
         <Combobox
           value={searchParams.get('secretScanStatus')}
-          nullable
           onQueryChange={(query) => {
             setSecretScanStatusSearchText(query);
           }}
@@ -389,7 +402,6 @@ function Filters() {
         </Combobox>
         <Combobox
           value={searchParams.get('malwareScanStatus')}
-          nullable
           onQueryChange={(query) => {
             setMalwareScanStatusSearchText(query);
           }}
@@ -426,7 +438,6 @@ function Filters() {
         </Combobox>
         <Combobox
           value={searchParams.get('complianceScanStatus')}
-          nullable
           onQueryChange={(query) => {
             setComplianceScanStatusSearchText(query);
           }}
@@ -550,7 +561,7 @@ function Filters() {
           }}
           getDisplayValue={() => FILTER_SEARCHPARAMS['agentRunning']}
         >
-          {['On', 'Off']
+          {['Yes', 'No']
             .filter((item) => {
               if (!agentRunningSearchText.length) return true;
               return item.toLowerCase().includes(agentRunningSearchText.toLowerCase());
@@ -563,6 +574,28 @@ function Filters() {
               );
             })}
         </Combobox>
+        <SearchableUserDefinedTagList
+          resourceType="host"
+          defaultSelectedTags={searchParams.getAll('userDefinedTags')}
+          onChange={(value) => {
+            setSearchParams((prev) => {
+              prev.delete('userDefinedTags');
+              value.forEach((tag) => {
+                prev.append('userDefinedTags', tag);
+              });
+              prev.delete('page');
+              return prev;
+            });
+          }}
+          onClearAll={() => {
+            setSearchParams((prev) => {
+              prev.delete('userDefinedTags');
+              prev.delete('page');
+              return prev;
+            });
+          }}
+          triggerVariant="button"
+        />
       </div>
       {appliedFilterCount > 0 ? (
         <div className="flex gap-2.5 mt-4 flex-wrap items-center">
@@ -593,7 +626,10 @@ function Filters() {
               <FilterBadge
                 key={`${key}-${value}`}
                 onRemove={onFilterRemove({ key, value })}
-                text={value}
+                text={getPrettyNameForAppliedFilters({
+                  key,
+                  value,
+                })}
                 label={FILTER_SEARCHPARAMS[key]}
               />
             );
@@ -643,10 +679,11 @@ function useSearchHostsWithPagination() {
       order: getOrderFromSearchParams(searchParams),
       agentRunning: searchParams
         .getAll('agentRunning')
-        .map((value) => (value === 'On' ? true : false)),
+        .map((value) => (value === 'Yes' ? true : false)),
       cloudAccounts: searchParams.getAll('cloudAccounts'),
       clusterIds: searchParams.getAll('clusters'),
       hosts: searchParams.getAll('hosts'),
+      userDefinedTags: searchParams.getAll('userDefinedTags'),
     }),
     keepPreviousData: true,
   });
@@ -660,12 +697,9 @@ const DataTable = ({
   const { data } = useSearchHostsWithPagination();
   const columnHelper = createColumnHelper<ModelHost>();
   const [rowSelectionState, setRowSelectionState] = useState<RowSelectionState>({});
-  const [clickedItem, setClickedItem] = useState<{
-    nodeId: string;
-    nodeType: string;
-  }>();
   const [sort, setSort] = useSortingState();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { detailModalItem, setDetailModalItem } = useDetailModalState();
 
   const { data: versionsData } = useGetAgentVersions();
   const versions = versionsData.versions ?? [];
@@ -701,34 +735,51 @@ const DataTable = ({
             name = info.row.original.node_name;
           }
           return (
-            <div className="flex items-center">
+            <div className="flex flex-col gap-1 items-start text-start py-2">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                 }}
-                className="truncate"
+                className="truncate w-full"
               >
                 <DFLink
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
-                    setClickedItem({
+                    setDetailModalItem({
+                      kind: 'host',
                       nodeId: info.row.original.node_id!,
-                      nodeType: 'host',
                     });
                   }}
+                  className="text-left"
                 >
                   <TruncatedText text={name} />
                 </DFLink>
               </button>
+              {info.row.original?.tags?.length ? (
+                <div className="flex gap-2 items-center flex-wrap">
+                  {info.row.original.tags.map((tag) => {
+                    return (
+                      <Badge
+                        startIcon={<TagOutlineIcon />}
+                        key={tag}
+                        label={tag}
+                        variant="filled"
+                        color="info"
+                        size="small"
+                      />
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
           );
         },
         header: () => 'Name',
         minSize: 300,
-        size: 400,
-        maxSize: 600,
+        size: 320,
+        maxSize: 360,
       }),
       columnHelper.accessor('vulnerability_scan_status', {
         cell: (info) => {
@@ -771,20 +822,27 @@ const DataTable = ({
           if (!info.getValue()) {
             return <div className="border-b w-[8px] border-text-icon"></div>;
           }
-          return <TruncatedText text={info.getValue() ?? ''} />;
+          return <TruncatedText text={startCase(info.getValue())} />;
         },
-        header: () => <span>OS</span>,
+        header: () => 'OS',
         minSize: 50,
-        size: 60,
+        size: 80,
         maxSize: 120,
       }),
       columnHelper.accessor('agent_running', {
         cell: (info) => {
-          return <TruncatedText text={info.getValue() ? 'Yes' : 'No'} />;
+          return (
+            <TruncatedText
+              text={info.getValue() ? 'Yes' : 'No'}
+              className={cn({
+                'text-status-success': info.getValue(),
+              })}
+            />
+          );
         },
         header: () => <TruncatedText text="Agent running?" />,
-        minSize: 50,
-        size: 60,
+        minSize: 80,
+        size: 100,
         maxSize: 120,
       }),
       columnHelper.accessor('version', {
@@ -804,21 +862,13 @@ const DataTable = ({
                           Version <span className="text-h6">{versions[0]}</span> is
                           available. Please follow{' '}
                           <DFLink
-                            href="https://community.deepfence.io/threatmapper/docs/sensors/"
+                            href="https://threatmapper.org/threatmapper/docs/sensors/"
                             target="_blank"
                             className="dark:text-text-link text-blue-500"
                           >
                             the instructions
                           </DFLink>{' '}
-                          to upgrade the sensor probe. One click updates are available on{' '}
-                          <DFLink
-                            href="https://www.deepfence.io/threatstryker"
-                            target="_blank"
-                            className="dark:text-text-link text-blue-500"
-                          >
-                            ThreatStryker
-                          </DFLink>
-                          .
+                          to upgrade the sensor probe.
                         </div>
                       </div>
                     }
@@ -830,6 +880,9 @@ const DataTable = ({
                 </div>
               );
             }
+          }
+          if (!info.getValue()) {
+            return <div className="border-b w-[8px] border-text-icon"></div>;
           }
           return <TruncatedText text={info.getValue() ?? ''} />;
         },
@@ -906,12 +959,11 @@ const DataTable = ({
           });
         }}
       />
-      {clickedItem ? (
-        <NodeDetailsStackedModal
-          node={clickedItem}
-          open={true}
-          onOpenChange={(open) => {
-            if (!open) setClickedItem(undefined);
+      {detailModalItem ? (
+        <DetailModal
+          itemInfo={detailModalItem}
+          onItemClose={() => {
+            setDetailModalItem(null);
           }}
         />
       ) : null}

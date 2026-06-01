@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from '@suspensive/react-query';
 import { useIsFetching } from '@tanstack/react-query';
-import { capitalize } from 'lodash-es';
+import { capitalize, startCase } from 'lodash-es';
 import { Suspense, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -64,7 +64,7 @@ const RuntimeBom = () => {
   const isFetching = useIsFetching({
     queryKey: queries.vulnerability.scanList._def,
   });
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
   const [searchParams] = useSearchParams();
 
   return (
@@ -105,6 +105,7 @@ const RuntimeBom = () => {
             onClick={() => {
               setFiltersExpanded((prev) => !prev);
             }}
+            data-testid="filterButtonIdForTable"
           >
             Filter
           </Button>
@@ -135,7 +136,7 @@ const FILTER_SEARCHPARAMS_DYNAMIC_KEYS = [
 ];
 
 const FILTER_SEARCHPARAMS: Record<FILTER_SEARCHPARAMS_KEYS_ENUM, string> = {
-  nodeType: 'Node Type',
+  nodeType: 'Node type',
   containerImages: 'Container image',
   containers: 'Container',
   hosts: 'Host',
@@ -146,6 +147,21 @@ const getAppliedFiltersCount = (searchParams: URLSearchParams) => {
   return Object.keys(FILTER_SEARCHPARAMS).reduce((prev, curr) => {
     return prev + searchParams.getAll(curr).length;
   }, 0);
+};
+const getPrettyNameForAppliedFilters = ({
+  key,
+  value,
+}: {
+  key: string;
+  value: string;
+}) => {
+  switch (key) {
+    case 'nodeType':
+      return startCase(value);
+
+    default:
+      return value;
+  }
 };
 const Filters = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -204,7 +220,7 @@ const Filters = () => {
             .map((item) => {
               return (
                 <ComboboxOption key={item} value={item}>
-                  {capitalize(item)}
+                  {capitalize(item.replace('_', ' '))}
                 </ComboboxOption>
               );
             })}
@@ -234,13 +250,6 @@ const Filters = () => {
         <SearchableContainerList
           scanType={ScanTypeEnum.VulnerabilityScan}
           defaultSelectedContainers={searchParams.getAll('containers')}
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('containers');
-              prev.delete('page');
-              return prev;
-            });
-          }}
           onChange={(value) => {
             setSearchParams((prev) => {
               prev.delete('containers');
@@ -255,13 +264,6 @@ const Filters = () => {
         <SearchableHostList
           scanType={ScanTypeEnum.VulnerabilityScan}
           defaultSelectedHosts={searchParams.getAll('hosts')}
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('hosts');
-              prev.delete('page');
-              return prev;
-            });
-          }}
           onChange={(value) => {
             setSearchParams((prev) => {
               prev.delete('hosts');
@@ -327,7 +329,10 @@ const Filters = () => {
               <FilterBadge
                 key={`${key}-${value}`}
                 onRemove={onFilterRemove({ key, value })}
-                text={value}
+                text={getPrettyNameForAppliedFilters({
+                  key,
+                  value,
+                })}
                 label={FILTER_SEARCHPARAMS[key]}
               />
             );

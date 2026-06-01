@@ -33,10 +33,13 @@ docker run -dit \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -v /:/fenced/mnt/host/:ro \
     -e DF_LOG_LEVEL="info" \
-    -e USER_DEFINED_TAGS="" \
+    -e CUSTOM_TAGS="" \
     -e MGMT_CONSOLE_URL="---CONSOLE-IP---" \
     -e MGMT_CONSOLE_PORT="443" \
     -e DEEPFENCE_KEY="---DEEPFENCE-API-KEY---" \
+    -e http_proxy="" \
+    -e https_proxy="" \
+    -e no_proxy="" \
     $ACC/deepfence_agent_ce:THREATMAPPER_VERSION
 ```
 
@@ -49,7 +52,7 @@ Refer to the [Kubernetes Installation Instructions](/docs/sensors/kubernetes) al
 You can use these instructions for helm-based installations in standalone and hosted Kubernetes clusters
 
 ```bash
-helm repo add deepfence https://deepfence-helm-charts.s3.amazonaws.com/threatmapper
+helm repo add deepfence https://artifacts.threatmapper.org/helm-charts/threatmapper
 helm repo update
 
 helm show values deepfence/deepfence-agent --version TM_AGENT_HELM_CHART_VERSION > deepfence_agent_values.yaml

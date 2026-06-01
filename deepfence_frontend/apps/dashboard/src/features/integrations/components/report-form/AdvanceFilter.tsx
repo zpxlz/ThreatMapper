@@ -1,4 +1,3 @@
-import { upperCase } from 'lodash-es';
 import { useMemo, useState } from 'react';
 import { Listbox, ListboxOption } from 'ui-components';
 
@@ -111,9 +110,6 @@ export const AdvancedFilter = ({
                     onChange={(value) => {
                       setHosts(value);
                     }}
-                    onClearAll={() => {
-                      setHosts([]);
-                    }}
                     agentRunning={false}
                     active={!deadNodes}
                   />
@@ -149,9 +145,6 @@ export const AdvancedFilter = ({
                     defaultSelectedContainers={containers}
                     onChange={(value) => {
                       setContainers(value);
-                    }}
-                    onClearAll={() => {
-                      setContainers([]);
                     }}
                     active={!deadNodes}
                   />

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/deepfence/ThreatMapper/deepfence_server/model"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/directory"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/log"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/telemetry"
@@ -53,7 +54,7 @@ func initNeo4jDatabase(ctx context.Context) error {
 	RunDisplayError(ctx, session, "CREATE CONSTRAINT FOR (n:Malware) REQUIRE n.malware_id IS UNIQUE")
 	RunDisplayError(ctx, session, "CREATE CONSTRAINT FOR (n:MalwareRule) REQUIRE n.rule_id IS UNIQUE")
 	RunDisplayError(ctx, session, "CREATE CONSTRAINT FOR (n:Vulnerability) REQUIRE n.node_id IS UNIQUE")
-	RunDisplayError(ctx, session, "CREATE CONSTRAINT FOR (n:VulnerabilityStub) REQUIRE n.node_id IS UNIQUE")
+	RunDisplayError(ctx, session, "CREATE CONSTRAINT FOR (n:VulnerabilityStub) REQUIRE n.rule_id IS UNIQUE")
 	RunDisplayError(ctx, session, "CREATE CONSTRAINT FOR (n:SecurityGroup) REQUIRE n.node_id IS UNIQUE")
 	RunDisplayError(ctx, session, "CREATE CONSTRAINT FOR (n:CloudNode) REQUIRE n.node_id IS UNIQUE")
 	RunDisplayError(ctx, session, "CREATE CONSTRAINT FOR (n:CloudResource) REQUIRE n.node_id IS UNIQUE")
@@ -89,9 +90,14 @@ func initNeo4jDatabase(ctx context.Context) error {
 	RunDisplayError(ctx, session, "CREATE INDEX CloudResourceDepth IF NOT EXISTS FOR (n:CloudResource) ON (n.depth)")
 	RunDisplayError(ctx, session, "CREATE INDEX CloudResourceLinked IF NOT EXISTS FOR (n:CloudResource) ON (n.linked)")
 
+	RunDisplayError(ctx, session, "CREATE INDEX CloudComplianceControlByControlID IF NOT EXISTS FOR (n:CloudComplianceControl) ON (n.control_id)")
+
 	//Set the base updated_at field on the ALIAS relationship
 	RunDisplayError(ctx, session, "WITH TIMESTAMP() as T MATCH(:ContainerImage) -[a:ALIAS]-> (:ImageTag) WHERE a.updated_at IS NULL SET a.updated_at=T")
 
+	RunDisplayError(ctx, session, "MATCH (n:CloudNode) WHERE COALESCE(n.refresh_status, '') = '' AND n.cloud_provider in ['"+model.PostureProviderAWS+"','"+model.PostureProviderGCP+"','"+model.PostureProviderAzure+"'] SET n.refresh_status='"+utils.ScanStatusStarting+"', n.refresh_message='', n.refresh_metadata=''")
+
+	RunDisplayError(ctx, session, "CREATE CONSTRAINT FOR (n:DeepfenceRule) REQUIRE n.node_id IS UNIQUE")
 	return nil
 }
 

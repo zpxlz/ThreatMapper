@@ -1,6 +1,5 @@
-FROM postgres:15.6-alpine3.19
+FROM postgres:15.15-alpine3.23
 
-MAINTAINER Deepfence Inc
 LABEL deepfence.role=system
 
 ENV DEEPFENCE_POSTGRES_USER_DB_HOST=deepfence-postgres \

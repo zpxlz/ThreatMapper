@@ -2,6 +2,7 @@ package directory
 
 import (
 	"context"
+	"crypto/tls"
 	"sync"
 
 	"github.com/redis/go-redis/v9"
@@ -20,6 +21,11 @@ func newRedisClient(endpoints DBConfigs) (*redis.Client, error) {
 	}
 	if endpoints.Redis.Password != "" {
 		redisOptions.Password = endpoints.Redis.Password
+	}
+	if endpoints.Redis.TLSConfig != "" {
+		redisOptions.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
 	}
 	return redis.NewClient(redisOptions), nil
 }

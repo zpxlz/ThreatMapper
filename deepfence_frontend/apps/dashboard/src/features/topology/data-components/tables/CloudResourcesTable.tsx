@@ -55,7 +55,7 @@ function useSearchCloudResourcesWithPagination() {
 
 export const CloudResourcesTable = () => {
   const [searchParams] = useSearchParams();
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
 
   return (
     <div className="px-4 pb-4">
@@ -78,6 +78,7 @@ export const CloudResourcesTable = () => {
           onClick={() => {
             setFiltersExpanded((prev) => !prev);
           }}
+          data-testid="filterButtonIdForTable"
         >
           Filter
         </Button>
@@ -97,7 +98,7 @@ const FILTER_SEARCHPARAMS: Record<string, string> = {
   cloudProvider: 'Cloud provider',
   serviceType: 'Service type',
   aws_account_ids: 'AWS account',
-  gcp_account_ids: 'GCP account',
+  gcp_account_ids: 'GCP project',
   azure_account_ids: 'Azure subscription',
 };
 
@@ -121,6 +122,22 @@ function getCloudProviderPrettyName(provider: ModelCloudResourceCloudProviderEnu
       throw new Error(`Unhandled case: ${_exhaustiveCheck}`);
   }
 }
+
+const getPrettyNameForAppliedFilters = ({
+  key,
+  value,
+}: {
+  key: string;
+  value: string;
+}) => {
+  switch (key) {
+    case 'cloudProvider':
+      return getCloudProviderPrettyName(value as ModelCloudResourceCloudProviderEnum);
+
+    default:
+      return value;
+  }
+};
 
 function SearchableServiceType() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -154,7 +171,6 @@ function SearchableServiceType() {
   return (
     <Combobox
       value={selected}
-      nullable
       multiple
       onEndReached={onEndReached}
       startIcon={
@@ -305,7 +321,7 @@ function Filters() {
         />
         <SearchableCloudAccountsList
           cloudProvider="gcp"
-          displayValue="GCP account"
+          displayValue={FILTER_SEARCHPARAMS['gcp_account_ids']}
           defaultSelectedAccounts={searchParams.getAll('gcp_account_ids')}
           onClearAll={() => {
             setSearchParams((prev) => {
@@ -359,7 +375,10 @@ function Filters() {
                 <FilterBadge
                   key={`${key}-${value}`}
                   onRemove={onFilterRemove({ key, value })}
-                  text={`${FILTER_SEARCHPARAMS[key]}: ${value}`}
+                  text={`${FILTER_SEARCHPARAMS[key]}: ${getPrettyNameForAppliedFilters({
+                    key,
+                    value,
+                  })}`}
                 />
               );
             })}
@@ -414,11 +433,11 @@ const DataTable = () => {
                 }}
                 target="_blank"
               >
-                <TruncatedText text={info.getValue()} />
+                <TruncatedText text={info.getValue() || info.row.original.node_id} />
               </DFLink>
             );
           }
-          return <TruncatedText text={info.getValue()} />;
+          return <TruncatedText text={info.getValue() || info.row.original.node_id} />;
         },
         header: () => 'Name',
         minSize: 100,

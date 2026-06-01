@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from '@suspensive/react-query';
 import { useIsFetching } from '@tanstack/react-query';
-import { capitalize } from 'lodash-es';
+import { capitalize, startCase, upperFirst } from 'lodash-es';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActionFunctionArgs,
@@ -10,6 +10,7 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import { toast } from 'sonner';
+import { cn } from 'tailwind-preset';
 import {
   Badge,
   Breadcrumb,
@@ -44,6 +45,7 @@ import {
 import { ConfigureScanModal } from '@/components/ConfigureScanModal';
 import { DFLink } from '@/components/DFLink';
 import { FilterBadge } from '@/components/filters/FilterBadge';
+import { SearchableCloudAccountName } from '@/components/forms/SearchableCloudAccountName';
 import { SearchableCloudAccountsList } from '@/components/forms/SearchableCloudAccountsList';
 import { SearchableClusterList } from '@/components/forms/SearchableClusterList';
 import { SearchableHostList } from '@/components/forms/SearchableHostList';
@@ -51,6 +53,7 @@ import { ArrowUpCircleLine } from '@/components/icons/common/ArrowUpCircleLine';
 import { EllipsisIcon } from '@/components/icons/common/Ellipsis';
 import { ErrorStandardLineIcon } from '@/components/icons/common/ErrorStandardLine';
 import { FilterIcon } from '@/components/icons/common/Filter';
+import { InfoStandardIcon } from '@/components/icons/common/InfoStandard';
 import { PlusIcon } from '@/components/icons/common/Plus';
 import { RefreshIcon } from '@/components/icons/common/Refresh';
 import { TimesIcon } from '@/components/icons/common/Times';
@@ -59,6 +62,7 @@ import { ComplianceScanConfigureFormProps } from '@/components/scan-configure-fo
 import { StopScanForm } from '@/components/scan-configure-forms/StopScanForm';
 import { ScanStatusBadge } from '@/components/ScanStatusBadge';
 import { PostureIcon } from '@/components/sideNavigation/icons/Posture';
+import { TruncatedText } from '@/components/TruncatedText';
 import { getColorForCompliancePercent } from '@/constants/charts';
 import { BreadcrumbWrapper } from '@/features/common/BreadcrumbWrapper';
 import { useDownloadScan } from '@/features/common/data-component/downloadScanAction';
@@ -281,6 +285,7 @@ const usePostureAccounts = () => {
       aws_accounts: searchParams.getAll('aws_accounts'),
       gcp_accounts: searchParams.getAll('gcp_accounts'),
       azure_accounts: searchParams.getAll('azure_accounts'),
+      accountNames: searchParams.getAll('accountNames'),
       hosts: searchParams.getAll('hosts'),
       clusters: searchParams.getAll('clusters'),
     }),
@@ -297,6 +302,7 @@ enum FILTER_SEARCHPARAMS_KEYS_ENUM {
   azure_accounts = 'azure_accounts',
   hosts = 'hosts',
   clusters = 'clusters',
+  accountNames = 'accountNames',
 }
 
 const FILTER_SEARCHPARAMS_DYNAMIC_KEYS = [
@@ -309,16 +315,32 @@ const FILTER_SEARCHPARAMS: Record<FILTER_SEARCHPARAMS_KEYS_ENUM, string> = {
   status: 'Status',
   org_accounts: 'Organization account',
   aws_accounts: 'Account',
-  gcp_accounts: 'Account',
+  gcp_accounts: 'Project',
   azure_accounts: 'Subscription',
   hosts: 'Account',
   clusters: 'Account',
+  accountNames: 'Name',
 };
 
 const getAppliedFiltersCount = (searchParams: URLSearchParams) => {
   return Object.keys(FILTER_SEARCHPARAMS).reduce((prev, curr) => {
     return prev + searchParams.getAll(curr).length;
   }, 0);
+};
+const getPrettyNameForAppliedFilters = ({
+  key,
+  value,
+}: {
+  key: string;
+  value: string;
+}) => {
+  switch (key) {
+    case 'status':
+      return startCase(value);
+
+    default:
+      return value;
+  }
 };
 const Filters = () => {
   const { nodeType } = useParams() as {
@@ -390,7 +412,6 @@ const Filters = () => {
         </Combobox>
         <Combobox
           value={searchParams.get('complianceScanStatus')}
-          nullable
           onQueryChange={(query) => {
             setComplianceScanStatusSearchText(query);
           }}
@@ -473,6 +494,27 @@ const Filters = () => {
                 });
               }}
             />
+            <SearchableCloudAccountName
+              cloudProvider={nodeType as CloudNodeType}
+              defaultSelectedAccounts={searchParams.getAll('accountNames')}
+              onChange={(values) => {
+                setSearchParams((prev) => {
+                  prev.delete('accountNames');
+                  values.forEach((value) => {
+                    prev.append('accountNames', value);
+                  });
+                  prev.delete('page');
+                  return prev;
+                });
+              }}
+              onClearAll={() => {
+                setSearchParams((prev) => {
+                  prev.delete('accountNames');
+                  prev.delete('page');
+                  return prev;
+                });
+              }}
+            />
           </>
         ) : null}
 
@@ -481,13 +523,6 @@ const Filters = () => {
             scanType={'none'}
             displayValue={FILTER_SEARCHPARAMS['hosts']}
             defaultSelectedHosts={searchParams.getAll('hosts')}
-            onClearAll={() => {
-              setSearchParams((prev) => {
-                prev.delete('hosts');
-                prev.delete('page');
-                return prev;
-              });
-            }}
             onChange={(value) => {
               setSearchParams((prev) => {
                 prev.delete('hosts');
@@ -566,7 +601,10 @@ const Filters = () => {
               <FilterBadge
                 key={`${key}-${value}`}
                 onRemove={onFilterRemove({ key, value })}
-                text={value}
+                text={getPrettyNameForAppliedFilters({
+                  key,
+                  value,
+                })}
                 label={FILTER_SEARCHPARAMS[key]}
               />
             );
@@ -888,6 +926,7 @@ const ActionDropdown = ({
                 if (!scanId || !nodeType) return;
                 onTableAction(row, ActionEnumType.DELETE_SCAN);
               }}
+              color="error"
             >
               Delete latest scan
             </DropdownItem>
@@ -912,6 +951,7 @@ const ActionDropdown = ({
                     }
                     onTableAction(row, ActionEnumType.DELETE_ACCOUNT);
                   }}
+                  color="error"
                 >
                   Delete{' '}
                   {getDisplayNameOfNodeType(
@@ -1178,7 +1218,17 @@ const AccountTable = ({
       size: 40,
       maxSize: 40,
     },
+    account_name: {
+      minSize: 50,
+      size: 70,
+      maxSize: 80,
+    },
     last_scan_status: {
+      minSize: 50,
+      size: 70,
+      maxSize: 80,
+    },
+    refresh_status: {
       minSize: 50,
       size: 70,
       maxSize: 80,
@@ -1267,8 +1317,10 @@ const AccountTable = ({
           );
         },
         header: () =>
-          getDisplayNameOfNodeType(
-            nodeType as ModelCloudNodeAccountsListReqCloudProviderEnum,
+          upperFirst(
+            getDisplayNameOfNodeType(
+              nodeType as ModelCloudNodeAccountsListReqCloudProviderEnum,
+            ).toLowerCase(),
           ),
         ...columnWidth.node_name,
       }),
@@ -1279,7 +1331,7 @@ const AccountTable = ({
           const percent = Number(cell.getValue());
           const isScanned = !!cell.row.original.last_scan_status;
 
-          if (isScanned) {
+          if (isScanned || isCloudOrgNode(nodeType)) {
             return (
               <span
                 style={{
@@ -1296,45 +1348,100 @@ const AccountTable = ({
           }
         },
       }),
-      columnHelper.accessor('active', {
-        ...columnWidth.active,
-        header: () => 'Active',
-        cell: (info) => {
-          return info.getValue() ? 'Yes' : 'No';
-        },
-      }),
       columnHelper.accessor('last_scan_status', {
         cell: (info) => {
-          if (nodeType?.endsWith?.('_org')) {
+          if (isCloudOrgNode(nodeType)) {
             const data = info.row.original.scan_status_map ?? {};
-            const keys = Object.keys(data);
-            const statuses = Object.keys(data).map((current, index) => {
+            const statuses = Object.keys(data).map((current) => {
               return (
-                <>
-                  <div className="flex gap-x-1.5 items-center" key={current}>
-                    <span className="text-text-input-value font-medium">
-                      {data[current]}
-                    </span>
-                    <ScanStatusBadge status={current ?? ''} />
-                    {index < keys.length - 1 ? (
-                      <div className="mx-2 w-px h-[20px] bg-bg-grid-border" />
-                    ) : null}
-                  </div>
-                </>
+                <div className="flex gap-x-1.5 items-center" key={current}>
+                  <span className="text-text-input-value font-medium">
+                    {data[current]}
+                  </span>
+                  <ScanStatusBadge status={current ?? ''} />
+                </div>
               );
             });
-            return <div className="flex gap-x-1.5">{statuses}</div>;
+            return <div className="space-y-1.5 py-1">{statuses}</div>;
           } else {
             const value = info.getValue();
             return <ScanStatusBadge status={value ?? ''} />;
           }
         },
-        header: () => 'Status',
+        header: () => 'Scan status',
         ...columnWidth.last_scan_status,
+      }),
+      columnHelper.accessor('active', {
+        ...columnWidth.active,
+        header: () => 'Active',
+        cell: (info) => {
+          return (
+            <span className={cn({ 'text-status-success': info.getValue() })}>
+              {info.getValue() ? 'Yes' : 'No'}
+            </span>
+          );
+        },
       }),
     ];
 
     if (isCloudNonOrgNode(nodeType) || isCloudOrgNode(nodeType)) {
+      columns.splice(
+        3,
+        0,
+        columnHelper.accessor('account_name', {
+          ...columnWidth.account_name,
+          header: () => 'Name',
+          cell: (info) => {
+            return (
+              <TruncatedText text={info.getValue() || info.row.original.node_name} />
+            );
+          },
+        }),
+      );
+      columns.splice(
+        6,
+        0,
+        columnHelper.accessor('refresh_status', {
+          ...columnWidth.refresh_status,
+          header: () => 'Refresh status',
+          cell: (info) => {
+            if (isCloudOrgNode(nodeType)) {
+              const data = info.row.original.refresh_status_map ?? {};
+              const statuses = Object.keys(data).map((current) => {
+                return (
+                  <div className="flex gap-x-1.5 items-center" key={current}>
+                    <span className="text-text-input-value font-medium">
+                      {data[current]}
+                    </span>
+                    <ScanStatusBadge
+                      status={current}
+                      errorMessage={info.row.original.refresh_message}
+                    />
+                  </div>
+                );
+              });
+              return <div className="space-y-1.5 py-1">{statuses}</div>;
+            } else {
+              const refreshMessage = info.row.original.refresh_message;
+              return (
+                <div className="flex gap-2 items-center">
+                  <ScanStatusBadge
+                    status={info.getValue() ?? ''}
+                    errorMessage={info.row.original.refresh_message}
+                  />
+                  {refreshMessage?.length ? (
+                    <Tooltip content={refreshMessage} triggerAsChild>
+                      <span className="h-4 w-4 shrink-0 cursor-pointer">
+                        <InfoStandardIcon />
+                      </span>
+                    </Tooltip>
+                  ) : null}
+                </div>
+              );
+            }
+          },
+        }),
+      );
       columns.push(
         columnHelper.accessor('version', {
           enableSorting: false,
@@ -1352,22 +1459,13 @@ const AccountTable = ({
                           Version <span className="text-h6">{versions[0]}</span> is
                           available. Please follow{' '}
                           <DFLink
-                            href="https://community.deepfence.io/threatmapper/docs/cloudscanner/"
+                            href="https://threatmapper.org/threatmapper/docs/cloudscanner/"
                             target="_blank"
                             className="dark:text-text-link text-blue-500"
                           >
                             these instructions
                           </DFLink>{' '}
-                          to upgrade the scanner. If you need automatic updates to the
-                          scanner, please try{' '}
-                          <DFLink
-                            href="https://www.deepfence.io/threatstryker"
-                            target="_blank"
-                            className="dark:text-text-link text-blue-500"
-                          >
-                            ThreatStryker
-                          </DFLink>
-                          .
+                          to upgrade the scanner.
                         </div>
                       </div>
                     }
@@ -1380,7 +1478,7 @@ const AccountTable = ({
               </div>
             );
           },
-          header: () => 'Version',
+          header: () => 'Scanner version',
           ...columnWidth.version,
         }),
       );
@@ -1501,7 +1599,7 @@ const Accounts = () => {
   const [searchParams] = useSearchParams();
   const [rowSelectionState, setRowSelectionState] = useState<RowSelectionState>({});
 
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
   const fetcher = useFetcher();
   const routeParams = useParams() as {
     nodeType: string;
@@ -1710,6 +1808,7 @@ const Accounts = () => {
             onClick={() => {
               setFiltersExpanded((prev) => !prev);
             }}
+            data-testid="filterButtonIdForTable"
           >
             Filter
           </Button>
@@ -1738,6 +1837,12 @@ function getTabLabel(value: (typeof tabs)[number], nodeType: string) {
     } else {
       return 'Tenants';
     }
+  } else if (nodeType?.includes?.('gcp')) {
+    if (value === 'accounts') {
+      return 'Projects';
+    } else {
+      return 'Organization Projects';
+    }
   }
   return value === 'accounts' ? 'Regular Accounts' : 'Organization Accounts';
 }
@@ -1748,7 +1853,7 @@ const AccountWithTab = () => {
   };
 
   const [currentTab, setTab] = useState(() => {
-    return nodeType.endsWith('_org') ? 'org-accounts' : 'accounts';
+    return isCloudOrgNode(nodeType) ? 'org-accounts' : 'accounts';
   });
   const { navigate } = usePageNavigation();
 

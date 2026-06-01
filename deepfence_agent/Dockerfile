@@ -6,19 +6,19 @@ FROM $IMAGE_REPOSITORY/deepfence_package_scanner_ce:$DF_IMG_TAG AS package_build
 FROM $IMAGE_REPOSITORY/deepfence_malware_scanner_ce:$DF_IMG_TAG AS malware_build
 FROM $IMAGE_REPOSITORY/deepfence_compliance_scanner_ce:$DF_IMG_TAG AS compliance_build
 
-FROM debian:12-slim as downloads
+FROM debian:13-slim as downloads
 
-ENV DOCKERVERSION="24.0.2" \
-    VESSEL_VERSION="0.12.3"\
-    NERDCTL_VERSION="1.6.0" \
-    CRICTL_VERSION="v1.28.0"
+ENV DOCKERVERSION="29.1.3" \
+    VESSEL_VERSION="0.15.0" \
+    NERDCTL_VERSION="2.2.0" \
+    CRICTL_VERSION="v1.35.0"
 
 ARG TARGETARCH
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl ca-certificates
 
-# for docker 
+# for docker
 RUN <<EOF
 set -eux
 
@@ -68,9 +68,8 @@ RUN . /envfile-tools; cat /envfile-tools && \
     rm -f crictl-${CRICTL_VERSION}-linux-${ARCHITECTURE}.tar.gz
 
 
-FROM debian:12-slim
+FROM debian:13-slim
 
-MAINTAINER Deepfence Inc
 LABEL deepfence.role=system
 
 ENV CHECKPOINT_DISABLE=true \
@@ -158,7 +157,7 @@ COPY plugins/deepfence_shipper/deepfence_shipper /home/deepfence/bin/shipper
 COPY plugins/deepfence_shipper/routes.yaml /home/deepfence/routes.yaml
 
 COPY --from=secret_build /home/deepfence/usr/SecretScanner /home/deepfence/bin/secret-scanner
-# COPY --from=secret_build /home/deepfence/usr/config.yaml /home/deepfence/bin/secret-scanner/config
+COPY --from=secret_build /home/deepfence/usr/config.yaml /home/deepfence/bin/secret-scanner/config
 COPY --from=package_build /usr/local/bin/syft /usr/local/bin/syft
 COPY --from=package_build /usr/local/bin/package-scanner /home/deepfence/bin
 COPY --from=malware_build /usr/local/yara/lib /usr/lib
@@ -167,7 +166,7 @@ COPY --from=malware_build /home/deepfence/usr/config.yaml /home/deepfence/bin/ya
 COPY --from=compliance_build /usr/bin/compliance /usr/local/bin/compliance_check/compliance
 COPY --from=compliance_build /usr/bin/compliance /home/deepfence/bin/compliance
 
-# copy bins 
+# copy bins
 COPY --from=downloads /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=downloads /usr/local/bin/vessel /usr/local/bin/vessel
 COPY --from=downloads /usr/local/bin/nerdctl /usr/local/bin/nerdctl

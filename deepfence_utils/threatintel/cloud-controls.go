@@ -10,6 +10,7 @@ import (
 	"github.com/deepfence/ThreatMapper/deepfence_utils/telemetry"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/utils"
 	"github.com/hibiken/asynq"
+	"github.com/jellydator/ttlcache/v3"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
@@ -25,7 +26,7 @@ func DownloadAndPopulateCloudControls(ctx context.Context, entry Entry) error {
 	defer span.End()
 
 	// remove old rule file
-	existing, _, err := FetchPostureControlsInfo(ctx)
+	existing, _, _, err := FetchPostureControlsInfo(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("no existing posture control info found")
 	} else {
@@ -96,33 +97,46 @@ func UpdatePostureControlsInfo(ctx context.Context, hash, path string) error {
 	return nil
 }
 
-func FetchPostureControlsInfo(ctx context.Context) (path, hash string, err error) {
-	nc, err := directory.Neo4jClient(ctx)
+func FetchCloudPostureControlsURL(ctx context.Context, consoleURL string, ttlCache *ttlcache.Cache[string, string]) (string, string, error) {
+	path, hash, _, err := FetchPostureControlsInfo(ctx)
 	if err != nil {
 		return "", "", err
+	}
+	exposedURL, err := ExposeFile(ctx, path, consoleURL, ttlCache)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to expose cloud posture controls on fileserver")
+		return "", "", err
+	}
+	return exposedURL, hash, nil
+}
+
+func FetchPostureControlsInfo(ctx context.Context) (path, hash string, updated_at int64, err error) {
+	nc, err := directory.Neo4jClient(ctx)
+	if err != nil {
+		return "", "", 0, err
 	}
 	session := nc.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer session.Close(ctx)
 
 	tx, err := session.BeginTransaction(ctx)
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
 	defer tx.Close(ctx)
 
 	queryPostureControls := `
 	MATCH (s:PostureControls{node_id: "latest"})
-	RETURN s.path, s.rules_hash`
+	RETURN s.path, s.rules_hash, s.updated_at`
 
 	r, err := tx.Run(ctx, queryPostureControls, map[string]interface{}{})
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
 	rec, err := r.Single(ctx)
 	if err != nil {
-		return "", "", err
+		return "", "", 0, err
 	}
 
-	return rec.Values[0].(string), rec.Values[1].(string), nil
+	return rec.Values[0].(string), rec.Values[1].(string), rec.Values[2].(int64), nil
 
 }

@@ -34,7 +34,7 @@ import { FilterWrapper } from '@/features/common/FilterWrapper';
 import { queries } from '@/queries';
 import { useTheme } from '@/theme/ThemeContext';
 import { ScanTypeEnum, SecretSeverityType } from '@/types/common';
-import { SeverityEnumList } from '@/utils/enum';
+import { getSeverityPrettyName, SeverityEnumList, SeverityValueType } from '@/utils/enum';
 import { getOrderFromSearchParams, useSortingState } from '@/utils/table';
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -58,8 +58,24 @@ const FILTER_SEARCHPARAMS: Record<FILTER_SEARCHPARAMS_KEYS_ENUM, string> = {
   severity: 'Severity',
   hosts: 'Host',
   containers: 'Container',
-  containerImages: 'Container Images',
-  clusters: 'Clusters',
+  containerImages: 'Container image',
+  clusters: 'Cluster',
+};
+
+const getPrettyNameForAppliedFilters = ({
+  key,
+  value,
+}: {
+  key: string;
+  value: string;
+}) => {
+  switch (key) {
+    case 'severity':
+      return getSeverityPrettyName(value as SeverityValueType);
+
+    default:
+      return value;
+  }
 };
 
 const getAppliedFiltersCount = (searchParams: URLSearchParams) => {
@@ -130,13 +146,6 @@ const Filters = () => {
         <SearchableHostList
           scanType={ScanTypeEnum.SecretScan}
           defaultSelectedHosts={searchParams.getAll('hosts')}
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('hosts');
-              prev.delete('page');
-              return prev;
-            });
-          }}
           onChange={(value) => {
             setSearchParams((prev) => {
               prev.delete('hosts');
@@ -151,13 +160,6 @@ const Filters = () => {
         <SearchableContainerList
           scanType={ScanTypeEnum.SecretScan}
           defaultSelectedContainers={searchParams.getAll('containers')}
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('containers');
-              prev.delete('page');
-              return prev;
-            });
-          }}
           onChange={(value) => {
             setSearchParams((prev) => {
               prev.delete('containers');
@@ -244,7 +246,10 @@ const Filters = () => {
               <FilterBadge
                 key={`${key}-${value}`}
                 onRemove={onFilterRemove({ key, value })}
-                text={value}
+                text={getPrettyNameForAppliedFilters({
+                  key,
+                  value,
+                })}
                 label={FILTER_SEARCHPARAMS[key]}
               />
             );
@@ -291,10 +296,10 @@ const UniqueTable = () => {
             <div className="w-4 h-4 shrink-0 text-text-text-and-icon">
               <SecretsIcon />
             </div>
-            <TruncatedText text={info.row.original.name ?? info.getValue() ?? ''} />
+            <TruncatedText text={info.row.original.rule_id ?? info.getValue() ?? ''} />
           </DFLink>
         ),
-        header: () => <TruncatedText text="Name" />,
+        header: () => <TruncatedText text="Rule ID" />,
         minSize: 100,
         size: 120,
         maxSize: 130,
@@ -327,23 +332,6 @@ const UniqueTable = () => {
           </div>
         ),
         header: () => <TruncatedText text="Severity" />,
-        minSize: 40,
-        size: 50,
-        maxSize: 100,
-      }),
-      columnHelper.accessor('signature_to_match', {
-        enableResizing: true,
-        enableSorting: false,
-        cell: (info) => <TruncatedText text={info.getValue()} />,
-        header: () => <TruncatedText text="Signature to match" />,
-        minSize: 130,
-        size: 140,
-        maxSize: 145,
-      }),
-      columnHelper.accessor('part', {
-        enableSorting: false,
-        cell: (info) => <TruncatedText text={info.getValue() ?? ''} />,
-        header: () => <TruncatedText text="Part" />,
         minSize: 40,
         size: 50,
         maxSize: 100,
@@ -432,7 +420,7 @@ const UniqueSecrets = () => {
   const isFetching = useIsFetching({
     queryKey: queries.secret.uniqueSecrets._def,
   });
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
   const [searchParams] = useSearchParams();
 
   return (
@@ -473,6 +461,7 @@ const UniqueSecrets = () => {
             onClick={() => {
               setFiltersExpanded((prev) => !prev);
             }}
+            data-testid="filterButtonIdForTable"
           >
             Filter
           </Button>

@@ -262,6 +262,11 @@ type VulnerabilityScanResult struct {
 	SeverityCounts  map[string]int32 `json:"severity_counts" required:"true"`
 }
 
+type PackageVulnerabilityScanResult struct {
+	ScanResultsCommon
+	PackageVulnerability map[string][]Vulnerability `json:"packages_vulnerability" required:"true"`
+}
+
 type MalwareScanResult struct {
 	ScanResultsCommon
 	Malwares       []Malware        `json:"malwares" required:"true"`
@@ -296,21 +301,16 @@ type CloudComplianceScanResult struct {
 
 type Secret struct {
 	// Secret + Rule neo4j node
-	NodeID                string      `json:"node_id" required:"true"`
-	StartingIndex         int32       `json:"starting_index" required:"true"`
-	RelativeStartingIndex int32       `json:"relative_starting_index" required:"true"`
-	RelativeEndingIndex   int32       `json:"relative_ending_index" required:"true"`
-	FullFilename          string      `json:"full_filename" required:"true"`
-	MatchedContent        string      `json:"matched_content" required:"true"`
-	Masked                bool        `json:"masked" required:"true"`
-	UpdatedAt             int64       `json:"updated_at" required:"true"`
-	Level                 string      `json:"level" validate:"required,oneof=critical high medium low unknown" required:"true" enum:"critical,high,medium,low,unknown"`
-	Score                 float64     `json:"score" required:"true"`
-	RuleID                int32       `json:"rule_id" required:"true"`
-	Name                  string      `json:"name" required:"true"`
-	Part                  string      `json:"part" required:"true"`
-	SignatureToMatch      string      `json:"signature_to_match" required:"true"`
-	Resources             []BasicNode `json:"resources" required:"false"`
+	NodeID         string      `json:"node_id" required:"true"`
+	StartingIndex  int32       `json:"starting_index" required:"true"`
+	FullFilename   string      `json:"full_filename" required:"true"`
+	MatchedContent string      `json:"matched_content" required:"true"`
+	Masked         bool        `json:"masked" required:"true"`
+	UpdatedAt      int64       `json:"updated_at" required:"true"`
+	Level          string      `json:"level" validate:"required,oneof=critical high medium low unknown" required:"true" enum:"critical,high,medium,low,unknown"`
+	Score          float64     `json:"score" required:"true"`
+	RuleID         string      `json:"rule_id" required:"true"`
+	Resources      []BasicNode `json:"resources" required:"false"`
 }
 
 func (Secret) NodeType() string {
@@ -330,12 +330,14 @@ func (Secret) GetJSONCategory() string {
 }
 
 type SecretRule struct {
-	ID               int    `json:"id"`
-	Name             string `json:"name"`
+	RuleID           string `json:"rule_id"`
 	Part             string `json:"part"`
 	SignatureToMatch string `json:"signature_to_match"`
 	Level            string `json:"level" required:"true"`
 	Masked           bool   `json:"masked" required:"true"`
+	Summary          string `json:"summary" required:"true"`
+	Payload          string `json:"payload" required:"true"`
+	Severity         string `json:"severity" required:"true"`
 	UpdatedAt        int64  `json:"updated_at" required:"true"`
 }
 
@@ -377,6 +379,9 @@ type Vulnerability struct {
 	ParsedAttackVector     string        `json:"parsed_attack_vector" required:"true"`
 	Resources              []BasicNode   `json:"resources" required:"false"`
 	RuleID                 string        `json:"rule_id" required:"true"`
+	Namespace              string        `json:"namespace" required:"true"`
+	CISAKEV                bool          `json:"cisa_kev" required:"true"`
+	EPSSScore              float64       `json:"epss_score" required:"true"`
 }
 
 func (Vulnerability) NodeType() string {
@@ -396,22 +401,26 @@ func (Vulnerability) GetJSONCategory() string {
 }
 
 type VulnerabilityRule struct {
-	NodeID             string        `json:"node_id" required:"true"`
-	CveID              string        `json:"cve_id" required:"true"`
-	CveType            string        `json:"cve_type" required:"true"`
-	CveSeverity        string        `json:"cve_severity" required:"true"`
-	CveFixedIn         string        `json:"cve_fixed_in" required:"true"`
-	CveLink            string        `json:"cve_link" required:"true"`
-	CveDescription     string        `json:"cve_description" required:"true"`
-	CveCVSSScore       float64       `json:"cve_cvss_score" required:"true"`
-	CveOverallScore    float64       `json:"cve_overall_score" required:"true"`
-	CveAttackVector    string        `json:"cve_attack_vector" required:"true"`
-	URLs               []interface{} `json:"urls" required:"true"`
-	ExploitPOC         string        `json:"exploit_poc" required:"true"`
-	Masked             bool          `json:"masked" required:"true"`
-	UpdatedAt          int64         `json:"updated_at" required:"true"`
-	ParsedAttackVector string        `json:"parsed_attack_vector" required:"true"`
-	Resources          []BasicNode   `json:"resources" required:"false"`
+	NodeID              string      `json:"node_id" required:"true"`
+	CveID               string      `json:"cve_id" required:"true"`
+	CveTypes            []string    `json:"cve_types" required:"true"`
+	CveSeverities       []string    `json:"cve_severities" required:"true"`
+	CveFixedIns         []string    `json:"cve_fixed_ins" required:"true"`
+	CveLinks            []string    `json:"cve_links" required:"true"`
+	CveDescriptions     []string    `json:"cve_descriptions" required:"true"`
+	CveCvssScores       []any       `json:"cve_cvss_scores" required:"true"`
+	CveOverallScores    []any       `json:"cve_overall_scores" required:"true"`
+	CveAttackVectors    []string    `json:"cve_attack_vectors" required:"true"`
+	URLs                []string    `json:"urls" required:"true"`
+	ExploitPOCs         []string    `json:"exploit_pocs" required:"true"`
+	Masked              bool        `json:"masked" required:"true"`
+	UpdatedAt           int64       `json:"updated_at" required:"true"`
+	PackageNames        []string    `json:"package_names" required:"true"`
+	ParsedAttackVectors []string    `json:"parsed_attack_vectors" required:"true"`
+	Resources           []BasicNode `json:"resources" required:"false"`
+	CISAKEV             bool        `json:"cisa_kev" required:"true"`
+	EPSSScore           float64     `json:"epss_score" required:"true"`
+	Namespaces          []string    `json:"namespaces" required:"true"`
 }
 
 func (VulnerabilityRule) NodeType() string {
@@ -423,7 +432,10 @@ func (VulnerabilityRule) ExtendedField() string {
 }
 
 func (v VulnerabilityRule) GetCategory() string {
-	return v.CveSeverity
+	if len(v.CveSeverities) > 0 {
+		return v.CveSeverities[0]
+	}
+	return ""
 }
 
 func (VulnerabilityRule) GetJSONCategory() string {
@@ -446,6 +458,7 @@ type Malware struct {
 	Filetype         string        `json:"filetype"`
 	Info             string        `json:"info"`
 	Version          string        `json:"version"`
+	Reference        string        `json:"reference"`
 	SeverityScore    int           `json:"severity_score"`
 	StringsToMatch   []interface{} `json:"strings_to_match"`
 	Summary          string        `json:"summary"`
@@ -478,9 +491,11 @@ type MalwareRule struct {
 	Filetype     string `json:"filetype"`
 	Info         string `json:"info"`
 	Version      string `json:"version"`
-	Reference    string `json:"reference"`
 	FileSeverity string `json:"file_severity"`
 	Masked       bool   `json:"masked" required:"true"`
+	Payload      string `json:"payload" required:"true"`
+	Severity     string `json:"severity" required:"true"`
+	Summary      string `json:"summary" required:"true"`
 	UpdatedAt    int64  `json:"updated_at" required:"true"`
 }
 
@@ -603,6 +618,40 @@ func (CloudCompliance) GetJSONCategory() string {
 	return "severity"
 }
 
+type CloudComplianceControl struct {
+	ControlID              string   `json:"control_id"`
+	Documentation          string   `json:"documentation"`
+	Active                 bool     `json:"active"`
+	Description            string   `json:"description"`
+	CloudProvider          string   `json:"cloud_provider"`
+	Title                  string   `json:"title"`
+	Executable             bool     `json:"executable"`
+	CategoryHierarchyShort string   `json:"category_hierarchy_short"`
+	CategoryHierarchy      []string `json:"category_hierarchy"`
+	Service                string   `json:"service"`
+	ParentControlHierarchy []string `json:"parent_control_hierarchy"`
+	ComplianceType         string   `json:"compliance_type"`
+	Disabled               bool     `json:"disabled"`
+	Category               string   `json:"category"`
+	NodeID                 string   `json:"node_id"`
+}
+
+func (CloudComplianceControl) NodeType() string {
+	return "CloudComplianceControl"
+}
+
+func (CloudComplianceControl) ExtendedField() string {
+	return ""
+}
+
+func (v CloudComplianceControl) GetCategory() string {
+	return v.ComplianceType
+}
+
+func (CloudComplianceControl) GetJSONCategory() string {
+	return "compliance_type"
+}
+
 type ScanReportFieldsResponse struct {
 	Vulnerability []string `json:"vulnerability"`
 	Secret        []string `json:"secret"`
@@ -615,6 +664,12 @@ type ComplinaceScanResultsGroupReq struct {
 	FieldsFilter reporters.FieldsFilters `json:"fields_filter" required:"true"`
 }
 
-type ComplinaceScanResultsGroupResp struct {
-	Groups map[string]map[string]int64 `json:"groups"`
+type ComplianceScanResultsGroupResp struct {
+	Groups map[string]ComplianceScanResultControlGroup `json:"groups"`
+}
+
+type ComplianceScanResultControlGroup struct {
+	ProblemTitle   string           `json:"problem_title,omitempty"`
+	Counts         map[string]int64 `json:"counts,omitempty"`
+	BenchmarkTypes []string         `json:"benchmark_types,omitempty"`
 }

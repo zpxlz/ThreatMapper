@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/deepfence/ThreatMapper/deepfence_server/model"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/directory"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/telemetry"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/utils"
 	ingestersUtil "github.com/deepfence/ThreatMapper/deepfence_utils/utils/ingesters"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
+
+func generateSecretRuleId(r map[string]interface{}) string {
+	return fmt.Sprintf("index-%s", r["name"].(string))
+}
 
 func CommitFuncSecrets(ctx context.Context, ns string, data []ingestersUtil.Secret) error {
 	ctx = directory.ContextWithNameSpace(ctx, directory.NamespaceID(ns))
@@ -39,13 +44,10 @@ func CommitFuncSecrets(ctx context.Context, ns string, data []ingestersUtil.Secr
 
 	if _, err = tx.Run(ctx, `
 		UNWIND $batch as row WITH row.Rule as rule, row.Secret as secret
-		MERGE (r:SecretRule{rule_id:rule.rule_id})
-		SET r+=rule,
-		    r.masked = COALESCE(r.masked, false),
-		    r.updated_at = TIMESTAMP()
+		MATCH (r:SecretRule{rule_id:rule.rule_id})
 		WITH secret as row, r
 		MERGE (n:Secret{node_id:row.node_id})
-		SET n+= row, 
+		SET n+= row,
 			n.masked = COALESCE(n.masked, r.masked, false),
 			n.updated_at = TIMESTAMP()
 		WITH n, r, row
@@ -65,25 +67,26 @@ func secretsToMaps(data []ingestersUtil.Secret) ([]map[string]map[string]interfa
 
 	var secrets []map[string]map[string]interface{}
 	for _, i := range data {
-		secret := utils.ToMap(i)
-		delete(secret, "Severity")
-		delete(secret, "Rule")
-		delete(secret, "Match")
-
-		for k, v := range utils.ToMap(i.Severity) {
-			secret[k] = v
+		ruleID := generateSecretRuleId(utils.ToMap(i.Rule))
+		rule := map[string]interface{}{
+			"rule_id": ruleID,
 		}
 
-		for k, v := range utils.ToMap(i.Match) {
-			secret[k] = v
+		s := model.Secret{
+			NodeID:         utils.ScanIDReplacer.Replace(fmt.Sprintf("%v:%v", ruleID, i.Match.FullFilename)),
+			StartingIndex:  int32(i.Match.StartingIndex),
+			FullFilename:   i.Match.FullFilename,
+			MatchedContent: i.Match.MatchedContent,
+			Masked:         false,
+			Level:          i.Severity.Level,
+			Score:          i.Severity.Score,
+			RuleID:         ruleID,
 		}
 
-		secret["node_id"] = utils.ScanIDReplacer.Replace(fmt.Sprintf("%v:%v",
-			i.Rule.ID, i.Match.FullFilename))
-		rule := utils.ToMap(i.Rule)
-		delete(rule, "id")
-		rule["rule_id"] = i.Rule.ID
-		rule["level"] = i.Severity.Level
+		secret := utils.ToMap(s)
+		secret["scan_id"] = i.ScanID
+		delete(secret, "resources")
+
 		secrets = append(secrets, map[string]map[string]interface{}{
 			"Rule":   rule,
 			"Secret": secret,

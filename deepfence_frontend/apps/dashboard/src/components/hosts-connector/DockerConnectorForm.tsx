@@ -48,7 +48,7 @@ const Command = () => {
   -v /var/run/docker.sock:/var/run/docker.sock \\
   -v /:/fenced/mnt/host/:ro \\
   -e DF_LOG_LEVEL="info" \\
-  -e USER_DEFINED_TAGS="" \\
+  -e CUSTOM_TAGS="" \\
   -e MGMT_CONSOLE_URL="${window.location.host ?? '---CONSOLE-IP---'}" \\
   -e MGMT_CONSOLE_PORT="443" \\
   -e DEEPFENCE_KEY="${dfApiKey}" \\
@@ -120,7 +120,7 @@ export const DockerConnectorForm = () => {
             Deploy Deepfence agent sensor as a docker container. Find out more information
             by{' '}
             <DFLink
-              href={`https://community.deepfence.io/threatmapper/docs/v2.2/sensors/docker`}
+              href={`https://threatmapper.org/threatmapper/docs/v2.5/sensors/docker`}
               target="_blank"
               rel="noreferrer"
               className="mt-2"

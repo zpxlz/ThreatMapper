@@ -157,16 +157,18 @@ function getAccountProductName(provider: ModelPostureProvider) {
     return 'Clusters';
   } else if (provider.name === ModelCloudNodeAccountsListReqCloudProviderEnum.Azure) {
     return 'Subscriptions';
+  } else if (provider.name === ModelCloudNodeAccountsListReqCloudProviderEnum.Gcp) {
+    return 'Projects';
   } else if (!isNonCloudNode(provider.name ?? '')) {
     return 'Accounts';
   }
 }
 
 const CardCountSection = ({ provider }: { provider: ModelPostureProvider }) => {
-  const textStyle = 'text-p7a leading-6 text-text-text-and-icon min-w-[120px]';
+  const textStyle = 'text-p7a leading-6 text-text-text-and-icon min-w-[128px]';
   const countStyle = 'text-h3 text-text-input-value';
   return (
-    <div className="ml-[42px]">
+    <div className="ml-[40px]">
       <div className="flex gap-x-6">
         <span className={textStyle}>Active {getAccountProductName(provider)}</span>
         <span className={countStyle}>{abbreviateNumber(provider.node_count ?? 0)}</span>

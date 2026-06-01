@@ -1,6 +1,6 @@
 import { useSuspenseQuery } from '@suspensive/react-query';
 import { useIsFetching } from '@tanstack/react-query';
-import { capitalize } from 'lodash-es';
+import { capitalize, startCase } from 'lodash-es';
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActionFunctionArgs,
@@ -375,7 +375,7 @@ const FILTER_SEARCHPARAMS_DYNAMIC_KEYS = [
 ];
 
 const FILTER_SEARCHPARAMS: Record<FILTER_SEARCHPARAMS_KEYS_ENUM, string> = {
-  nodeType: 'Node Type',
+  nodeType: 'Node type',
   secretScanStatus: 'Secret scan status',
   containerImages: 'Container image',
   containers: 'Container',
@@ -383,7 +383,21 @@ const FILTER_SEARCHPARAMS: Record<FILTER_SEARCHPARAMS_KEYS_ENUM, string> = {
   clusters: 'Cluster',
   registryAccounts: 'Registry',
 };
+const getPrettyNameForAppliedFilters = ({
+  key,
+  value,
+}: {
+  key: string;
+  value: string;
+}) => {
+  switch (key) {
+    case 'nodeType':
+      return startCase(value);
 
+    default:
+      return value;
+  }
+};
 const getAppliedFiltersCount = (searchParams: URLSearchParams) => {
   return Object.keys(FILTER_SEARCHPARAMS).reduce((prev, curr) => {
     return prev + searchParams.getAll(curr).length;
@@ -454,7 +468,6 @@ const Filters = () => {
         </Combobox>
         <Combobox
           value={searchParams.get('secretScanStatus')}
-          nullable
           onQueryChange={(query) => {
             setSecretScanStatusSearchText(query);
           }}
@@ -516,13 +529,6 @@ const Filters = () => {
           scanType={ScanTypeEnum.SecretScan}
           defaultSelectedContainers={searchParams.getAll('containers')}
           isScannedForSecrets
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('containers');
-              prev.delete('page');
-              return prev;
-            });
-          }}
           onChange={(value) => {
             setSearchParams((prev) => {
               prev.delete('containers');
@@ -538,13 +544,6 @@ const Filters = () => {
           scanType={ScanTypeEnum.SecretScan}
           defaultSelectedHosts={searchParams.getAll('hosts')}
           isScannedForSecrets
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('hosts');
-              prev.delete('page');
-              return prev;
-            });
-          }}
           onChange={(value) => {
             setSearchParams((prev) => {
               prev.delete('hosts');
@@ -632,7 +631,10 @@ const Filters = () => {
                 <FilterBadge
                   key={`${key}-${value}`}
                   onRemove={onFilterRemove({ key, value })}
-                  text={`${FILTER_SEARCHPARAMS[key]}: ${value}`}
+                  text={`${FILTER_SEARCHPARAMS[key]}: ${getPrettyNameForAppliedFilters({
+                    key,
+                    value,
+                  })}`}
                 />
               );
             }
@@ -1122,7 +1124,7 @@ const BulkActions = ({
 const SecretScans = () => {
   const [searchParams] = useSearchParams();
 
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
   const isFetching = useIsFetching({
     queryKey: queries.secret.scanList._def,
   });
@@ -1292,6 +1294,7 @@ const SecretScans = () => {
             onClick={() => {
               setFiltersExpanded((prev) => !prev);
             }}
+            data-testid="filterButtonIdForTable"
           >
             Filter
           </Button>

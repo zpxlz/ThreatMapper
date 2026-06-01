@@ -3,8 +3,8 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import {
   Card,
   IconButton,
-  Listbox,
-  ListboxOption,
+  ListboxOptionV2,
+  ListboxV2,
   Step,
   StepIndicator,
   StepLine,
@@ -175,10 +175,11 @@ const InformationForm = ({
       </div>
       <div className="grid grid-cols-2 mb-4">
         <div className="max-w-sm">
-          <Listbox
+          <ListboxV2
             value={containerRuntime}
             name="runtime"
-            onChange={(value) => {
+            variant="underline"
+            setValue={(value) => {
               setContainerRuntime(value);
               setSocketPath(socketMap[value].path || '');
             }}
@@ -188,11 +189,11 @@ const InformationForm = ({
             }}
           >
             {containerRuntimeDropdown.map((runtime) => (
-              <ListboxOption value={runtime.name} key={runtime.name}>
+              <ListboxOptionV2 value={runtime.name} key={runtime.name}>
                 {runtime.name}
-              </ListboxOption>
+              </ListboxOptionV2>
             ))}
-          </Listbox>
+          </ListboxV2>
         </div>
         <div className="max-w-sm">
           <TextInput
@@ -215,7 +216,7 @@ const FirstCommand = () => {
     <div className="relative flex items-center">
       <pre className="h-fit text-p7a text-text-text-and-icon">
         helm repo add deepfence
-        https://deepfence-helm-charts.s3.amazonaws.com/threatmapper
+        https://artifacts.threatmapper.org/helm-charts/threatmapper
       </pre>
       <div className="flex items-center ml-auto self-start">
         {isCopied ? 'copied' : null}
@@ -225,7 +226,7 @@ const FirstCommand = () => {
           variant="flat"
           onClick={() => {
             copy(
-              'helm repo add deepfence https://deepfence-helm-charts.s3.amazonaws.com/threatmapper',
+              'helm repo add deepfence https://artifacts.threatmapper.org/helm-charts/threatmapper',
             );
           }}
         />
@@ -314,7 +315,7 @@ const Skeleton = () => {
 };
 export const K8ConnectorForm = () => {
   const [instruction, setInstruction] =
-    useState(`helm repo add deepfence https://deepfence-helm-charts.s3.amazonaws.com/threatmapper
+    useState(`helm repo add deepfence https://artifacts.threatmapper.org/helm-charts/threatmapper
 helm repo update
 
 helm install deepfence-agent deepfence/deepfence-agent \\
@@ -347,7 +348,7 @@ helm install deepfence-agent deepfence/deepfence-agent \\
           <div className="text-p7a text-text-text-and-icon">
             Deploy Deepfence agent Kubernetes Scanner. Find out more information by{' '}
             <DFLink
-              href={`https://community.deepfence.io/threatmapper/docs/v2.2/sensors/kubernetes`}
+              href={`https://threatmapper.org/threatmapper/docs/v2.5/sensors/kubernetes`}
               target="_blank"
               rel="noreferrer"
               className="mt-2"

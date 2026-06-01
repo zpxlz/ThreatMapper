@@ -3,8 +3,8 @@ import { Suspense, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CircleSpinner,
-  Listbox,
-  ListboxOption,
+  ListboxOptionV2,
+  ListboxV2,
   Step,
   StepIndicator,
   StepLine,
@@ -58,7 +58,7 @@ const Links = ({ region }: { region: string }) => {
   return (
     <>
       <DFLink
-        href={`https://${region}.console.aws.amazon.com/cloudformation/home?region=${region}#/stacks/create/review?templateURL=https://deepfence-public.s3.amazonaws.com/cloud-scanner/self-hosted/single-account-deployment/deepfence-cloud-scanner.template&stackName=Deepfence-Cloud-Scanner&param_CloudScannerImage=quay.io/deepfenceio/cloud_scanner_ce:${version}`}
+        href={`https://${region}.console.aws.amazon.com/cloudformation/home?region=${region}#/stacks/create/review?templateURL=https://artifacts.threatmapper.org/cloud-scanner/self-hosted/single-account-deployment/deepfence-cloud-scanner.template&stackName=Deepfence-Cloud-Scanner&param_CloudScannerImage=quay.io/deepfenceio/cloud_scanner_ce:${version}`}
         target="_blank"
         rel="noreferrer"
         className="flex items-center mt-4"
@@ -67,7 +67,7 @@ const Links = ({ region }: { region: string }) => {
       </DFLink>
 
       <DFLink
-        href="https://deepfence-public.s3.amazonaws.com/cloud-scanner/self-hosted/single-account-deployment/deepfence-cloud-scanner.template"
+        href="https://artifacts.threatmapper.org/cloud-scanner/self-hosted/single-account-deployment/deepfence-cloud-scanner.template"
         target="_blank"
         rel="noreferrer"
         className="mt-2"
@@ -75,7 +75,7 @@ const Links = ({ region }: { region: string }) => {
         You can refer the single account template from here
       </DFLink>
       <DFLink
-        href={`https://${region}.console.aws.amazon.com/cloudformation/home?region=${region}#/stacks/create/review?templateURL=https://deepfence-public.s3.amazonaws.com/cloud-scanner/self-hosted/organization-deployment/deepfence-cloud-scanner-org-common.template&stackName=Deepfence-Cloud-Scanner&param_CloudScannerImage=quay.io/deepfenceio/cloud_scanner_ce:${version}`}
+        href={`https://${region}.console.aws.amazon.com/cloudformation/home?region=${region}#/stacks/create/review?templateURL=https://artifacts.threatmapper.org/cloud-scanner/self-hosted/organization-deployment/deepfence-cloud-scanner-org-common.template&stackName=Deepfence-Cloud-Scanner&param_CloudScannerImage=quay.io/deepfenceio/cloud_scanner_ce:${version}`}
         target="_blank"
         rel="noreferrer"
         className="flex items-center mt-4"
@@ -84,7 +84,7 @@ const Links = ({ region }: { region: string }) => {
       </DFLink>
       <DFLink
         href={
-          'https://deepfence-public.s3.amazonaws.com/cloud-scanner/self-hosted/organization-deployment/deepfence-cloud-scanner-org-common.template'
+          'https://artifacts.threatmapper.org/cloud-scanner/self-hosted/organization-deployment/deepfence-cloud-scanner-org-common.template'
         }
         target="_blank"
         rel="noreferrer"
@@ -119,8 +119,10 @@ export const AWSCloudFormation = () => {
             Connect to your AWS Cloud Account via Cloud Formation. Find out more
             information by{' '}
             <Link
-              to="https://community.deepfence.io/threatmapper/docs/v2.2/cloudscanner/aws#cloudformation"
+              to="https://threatmapper.org/threatmapper/docs/v2.5/cloudscanner/aws#cloudformation"
               className="text-text-link"
+              target="_blank"
+              rel="noreferrer"
             >
               reading our documentation
             </Link>
@@ -137,10 +139,10 @@ export const AWSCloudFormation = () => {
           title="Region Selection"
         >
           <div className="w-1/2">
-            <Listbox
+            <ListboxV2
               value={region}
               name="region"
-              onChange={(value) => {
+              setValue={(value) => {
                 setRegion(value);
               }}
               placeholder="Select a region"
@@ -149,11 +151,11 @@ export const AWSCloudFormation = () => {
               }}
             >
               {AWS_REGIONS.map((region) => (
-                <ListboxOption value={region} key={region}>
+                <ListboxOptionV2 value={region} key={region}>
                   {region}
-                </ListboxOption>
+                </ListboxOptionV2>
               ))}
-            </Listbox>
+            </ListboxV2>
           </div>
         </Step>
         <Step

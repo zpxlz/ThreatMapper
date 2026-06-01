@@ -47,15 +47,18 @@ type CloudNodeMonitoredAccount struct {
 }
 
 type CloudNodeAccountRegisterReq struct {
-	NodeID                   string                      `json:"node_id" validate:"required" required:"true"`
-	AccountName              string                      `json:"account_name"`
-	HostNodeID               string                      `json:"host_node_id" validate:"required" required:"true"`
-	AccountID                string                      `json:"account_id" validate:"required" required:"true"`
-	CloudProvider            string                      `json:"cloud_provider" validate:"required,oneof=aws gcp azure" enum:"aws,gcp,azure" required:"true"`
-	IsOrganizationDeployment bool                        `json:"is_organization_deployment"`
-	MonitoredAccounts        []CloudNodeMonitoredAccount `json:"monitored_accounts"`
-	OrganizationAccountID    string                      `json:"organization_account_id"`
-	Version                  string                      `json:"version" validate:"required" required:"true"`
+	NodeID                    string                      `json:"node_id" validate:"required" required:"true"`
+	AccountName               string                      `json:"account_name"`
+	HostNodeID                string                      `json:"host_node_id" validate:"required" required:"true"`
+	AccountID                 string                      `json:"account_id" validate:"required" required:"true"`
+	CloudProvider             string                      `json:"cloud_provider" validate:"required,oneof=aws gcp azure" enum:"aws,gcp,azure" required:"true"`
+	IsOrganizationDeployment  bool                        `json:"is_organization_deployment"`
+	MonitoredAccounts         []CloudNodeMonitoredAccount `json:"monitored_accounts"`
+	OrganizationAccountID     string                      `json:"organization_account_id"`
+	Version                   string                      `json:"version" validate:"required" required:"true"`
+	PersistentVolumeSupported bool                        `json:"persistent_volume_supported"`
+	InstallationID            string                      `json:"installation_id" validate:"required" required:"true"`
+	InitialRequest            bool                        `json:"initial_request"`
 }
 
 type CloudNodeAccountsListReq struct {
@@ -78,13 +81,15 @@ type CloudNodeAccountInfo struct {
 	NodeID               string           `json:"node_id"`
 	NodeName             string           `json:"node_name"`
 	AccountName          string           `json:"account_name"`
-	CloudProvider        string           `json:"cloud_provider"`
+	CloudProvider        string           `json:"cloud_provider" enum:"aws,gcp,azure,aws_org,gcp_org,azure_org"`
 	CompliancePercentage float64          `json:"compliance_percentage"`
 	Active               bool             `json:"active"`
 	LastScanID           string           `json:"last_scan_id"`
 	LastScanStatus       string           `json:"last_scan_status"`
 	RefreshMessage       string           `json:"refresh_message"`
+	RefreshMetadata      string           `json:"refresh_metadata"`
 	RefreshStatus        string           `json:"refresh_status"`
+	RefreshStatusMap     map[string]int64 `json:"refresh_status_map"`
 	ScanStatusMap        map[string]int64 `json:"scan_status_map"`
 	Version              string           `json:"version"`
 	HostNodeID           string           `json:"host_node_id"`
@@ -102,6 +107,10 @@ func (v CloudNodeAccountInfo) NodeType() string {
 
 func (CloudNodeAccountInfo) ExtendedField() string {
 	return ""
+}
+
+func (v CloudNodeAccountInfo) id() string {
+	return v.NodeID
 }
 
 func (v CloudNodeAccountInfo) ScanType() utils.Neo4jScanType {
@@ -189,6 +198,7 @@ type CloudNodeComplianceControl struct {
 	ControlID              string   `json:"control_id"`
 	Enabled                bool     `json:"enabled"`
 	ComplianceType         string   `json:"compliance_type"`
+	ProblemTitle           string   `json:"problem_title"`
 }
 
 type PostureProvider struct {
@@ -201,8 +211,7 @@ type PostureProvider struct {
 	ResourceCount        int64   `json:"resource_count"`
 }
 
-func UpsertCloudComplianceNode(ctx context.Context, nodeDetails map[string]interface{},
-	parentNodeID string, hostNodeID string) error {
+func UpsertCloudAccount(ctx context.Context, nodeDetails map[string]interface{}, isOrganizationDeployment bool, hostNodeID string, initialRequest bool) error {
 
 	ctx, span := telemetry.NewSpan(ctx, "model", "upsert-cloud-compliance-node")
 	defer span.End()
@@ -221,37 +230,136 @@ func UpsertCloudComplianceNode(ctx context.Context, nodeDetails map[string]inter
 	}
 	defer tx.Close(ctx)
 
-	if parentNodeID == "" {
-		if _, err := tx.Run(ctx, `
-			MERGE (r:Node{node_id:$host_node_id, node_type: "cloud_agent"})
-			WITH $param as row, r
-			MERGE (n:CloudNode{node_id:row.node_id})
-			MERGE (r) -[:HOSTS]-> (n)
-			SET n+= row, n.active = true, n.updated_at = TIMESTAMP(), n.version = row.version,
-			r.node_name=$host_node_id, r.active = true, r.agent_running=true, r.updated_at = TIMESTAMP()`,
-			map[string]interface{}{
-				"param":        nodeDetails,
-				"host_node_id": hostNodeID,
-			}); err != nil {
+	var setRefreshStatusQuery string
+	var scheduleRefreshStatusQuery string
+	// Organization account node does not have refresh status. It is rather an aggregation of all child account statuses.
+	if !isOrganizationDeployment {
+		setRefreshStatusQuery = `ON CREATE SET n.refresh_status = '` + utils.ScanStatusStarting + `', n.refresh_message = '', n.refresh_metadata = ''`
+
+		if initialRequest {
+			session2 := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
+			defer session2.Close(ctx)
+
+			tx2, err := session2.BeginTransaction(ctx, neo4j.WithTxTimeout(30*time.Second))
+			if err != nil {
+				return err
+			}
+			defer tx2.Close(ctx)
+
+			res, err := tx2.Run(ctx,
+				`MATCH (n:CloudNode{node_id:$node_id}) RETURN coalesce(n.installation_id,''), coalesce(n.refresh_status,'')`,
+				map[string]interface{}{"node_id": nodeDetails["node_id"]})
+			if err != nil {
+				return err
+			}
+			rec, err := res.Single(ctx)
+			// ON CREATE will handle if Node does not exist
+			if err == nil {
+				if rec.Values[0].(string) != nodeDetails["installation_id"] {
+					scheduleRefreshStatusQuery = `, n.refresh_status = '` + utils.ScanStatusStarting + `', n.refresh_message = '', n.refresh_metadata = ''`
+				} else if rec.Values[1].(string) == utils.ScanStatusInProgress {
+					// Make it STARTING so that cloud scanner control request will pick it and continue
+					scheduleRefreshStatusQuery = `, n.refresh_status = '` + utils.ScanStatusStarting + `'`
+				}
+			}
+		}
+	}
+
+	if _, err = tx.Run(ctx, `
+		MERGE (r:Node{node_id:$host_node_id, node_type: "cloud_agent"})
+		WITH $param as row, r
+		MERGE (n:CloudNode{node_id:row.node_id})
+		`+setRefreshStatusQuery+`
+		MERGE (r) -[:HOSTS]-> (n)
+		SET n+= row, n.active = true, n.updated_at = TIMESTAMP(), n.version = row.version, r.node_name = $host_node_id, 
+	    r.active = true, r.agent_running = true, r.updated_at = TIMESTAMP()`+scheduleRefreshStatusQuery,
+		map[string]interface{}{
+			"param":        nodeDetails,
+			"host_node_id": hostNodeID,
+		}); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func UpsertChildCloudAccounts(ctx context.Context, nodeDetails []map[string]interface{}, parentNodeID string, installationID string, hostNodeID string, initialRequest bool) error {
+	ctx, span := telemetry.NewSpan(ctx, "model", "upsert-cloud-compliance-node")
+	defer span.End()
+
+	driver, err := directory.Neo4jClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
+	defer session.Close(ctx)
+
+	tx, err := session.BeginTransaction(ctx, neo4j.WithTxTimeout(30*time.Second))
+	if err != nil {
+		return err
+	}
+	defer tx.Close(ctx)
+
+	accountIDRefreshStatusMap := make(map[string]map[string]string)
+	if initialRequest {
+		session2 := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
+		defer session2.Close(ctx)
+
+		tx2, err := session2.BeginTransaction(ctx, neo4j.WithTxTimeout(30*time.Second))
+		if err != nil {
 			return err
 		}
-	} else {
-		if _, err := tx.Run(ctx, `
+		defer tx2.Close(ctx)
+
+		res, err := tx2.Run(ctx,
+			`MATCH (m:CloudNode{node_id:$node_id}) -[:IS_CHILD]-> (n:CloudNode)
+					RETURN coalesce(n.node_name,''), coalesce(n.installation_id,''), coalesce(n.refresh_status,'')`,
+			map[string]interface{}{"node_id": parentNodeID})
+		if err != nil {
+			return err
+		}
+		recs, err := res.Collect(ctx)
+		if err != nil {
+			return err
+		}
+		for _, rec := range recs {
+			accountID := rec.Values[0].(string)
+			if rec.Values[1].(string) != installationID {
+				accountIDRefreshStatusMap[accountID] = map[string]string{
+					"refresh_status": utils.ScanStatusStarting, "refresh_message": "", "refresh_metadata": ""}
+			} else if rec.Values[2].(string) == utils.ScanStatusInProgress {
+				// Make it STARTING so that cloud scanner control request will pick it and continue
+				accountIDRefreshStatusMap[accountID] = map[string]string{"refresh_status": utils.ScanStatusStarting}
+			}
+		}
+	}
+
+	for i, nodeDetail := range nodeDetails {
+		if refreshStatus, ok := accountIDRefreshStatusMap[nodeDetail["node_name"].(string)]; ok {
+			for k, v := range refreshStatus {
+				nodeDetails[i][k] = v
+			}
+		}
+	}
+
+	if _, err = tx.Run(ctx, `
 			MERGE (r:Node{node_id:$host_node_id, node_type: "cloud_agent"})
 			MERGE (m:CloudNode{node_id: $parent_node_id})
-			WITH $param as row, r, m
+			WITH r, m
+			UNWIND $param as row
 			MERGE (n:CloudNode{node_id:row.node_id})
+			ON CREATE SET n.refresh_status = '`+utils.ScanStatusStarting+`', n.refresh_message = '', n.refresh_metadata = ''
 			MERGE (m) -[:IS_CHILD]-> (n)
 			MERGE (r) -[:HOSTS]-> (n)
-			SET n+= row, n.active = true, n.updated_at = TIMESTAMP(), n.version = row.version, 
-			r.active = true, r.agent_running=true, r.updated_at = TIMESTAMP()`,
-			map[string]interface{}{
-				"param":          nodeDetails,
-				"parent_node_id": parentNodeID,
-				"host_node_id":   hostNodeID,
-			}); err != nil {
-			return err
-		}
+			SET n+= row, n.active = true, n.updated_at = TIMESTAMP(), n.version = row.version, r.active = true,
+			r.agent_running=true, r.updated_at = TIMESTAMP()`,
+		map[string]interface{}{
+			"param":          nodeDetails,
+			"parent_node_id": parentNodeID,
+			"host_node_id":   hostNodeID,
+		}); err != nil {
+		return err
 	}
 
 	return tx.Commit(ctx)
@@ -526,58 +634,14 @@ func (c *CloudAccountRefreshReq) SetCloudAccountRefresh(ctx context.Context) err
 
 	if _, err = tx.Run(ctx, `
 		UNWIND $batch as cloudNode
-		MERGE (n:CloudNodeRefresh{node_id: cloudNode})
-		SET n.refresh = true, n.updated_at = TIMESTAMP()`,
+		MATCH (m:CloudNode{node_id: cloudNode})
+		SET m.refresh_status = '`+utils.ScanStatusStarting+`', m.refresh_message = '', m.refresh_metadata = ''`,
 		map[string]interface{}{
 			"batch": c.NodeIDs,
 		}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
-}
-
-func (c *CloudAccountRefreshReq) GetCloudAccountRefresh(ctx context.Context) ([]string, error) {
-
-	ctx, span := telemetry.NewSpan(ctx, "model", "get-cloud-account-refresh")
-	defer span.End()
-
-	var updatedNodeIDs []string
-	driver, err := directory.Neo4jClient(ctx)
-	if err != nil {
-		return updatedNodeIDs, err
-	}
-
-	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
-	defer session.Close(ctx)
-
-	tx, err := session.BeginTransaction(ctx, neo4j.WithTxTimeout(30*time.Second))
-	if err != nil {
-		return updatedNodeIDs, err
-	}
-	defer tx.Close(ctx)
-
-	res, err := tx.Run(ctx, `
-		UNWIND $batch as cloudNode
-		MATCH (n:CloudNodeRefresh{node_id: cloudNode})
-		WHERE n.refresh=true
-		WITH n, n.node_id as deletedNodeID
-		DELETE n
-		RETURN deletedNodeID`,
-		map[string]interface{}{
-			"batch": c.NodeIDs,
-		})
-	if err != nil {
-		return updatedNodeIDs, err
-	}
-	recs, err := res.Collect(ctx)
-	if err != nil {
-		return updatedNodeIDs, err
-	}
-
-	for _, rec := range recs {
-		updatedNodeIDs = append(updatedNodeIDs, rec.Values[0].(string))
-	}
-	return updatedNodeIDs, tx.Commit(ctx)
 }
 
 type CloudAccountDeleteReq struct {

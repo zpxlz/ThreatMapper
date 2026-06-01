@@ -266,28 +266,6 @@ func (s *Scheduler) addCronJobs(ctx context.Context) error {
 	}
 	jobIDs = append(jobIDs, jobID)
 
-	// Adding CloudComplianceTask only to ensure data is ingested if task fails on startup
-	jobID, err = s.cron.AddFunc("@every 60m",
-		s.enqueueTask(namespace, utils.CloudComplianceControlsTask, true, utils.CritialTaskOpts()...))
-	if err != nil {
-		return err
-	}
-	jobIDs = append(jobIDs, jobID)
-
-	jobID, err = s.cron.AddFunc("@every 60m",
-		s.enqueueTask(namespace, utils.CheckAgentUpgradeTask, true))
-	if err != nil {
-		return err
-	}
-	jobIDs = append(jobIDs, jobID)
-
-	jobID, err = s.cron.AddFunc("@every 60m",
-		s.enqueueTask(namespace, utils.CheckCloudScannerAgentUpgradeTask, true))
-	if err != nil {
-		return err
-	}
-	jobIDs = append(jobIDs, jobID)
-
 	jobID, err = s.cron.AddFunc("@every 12h",
 		s.enqueueTask(namespace, utils.SyncRegistryTask, true, utils.CritialTaskOpts()...))
 	if err != nil {
@@ -297,7 +275,7 @@ func (s *Scheduler) addCronJobs(ctx context.Context) error {
 
 	// dont want unique tasks for SendNotification
 	jobID, err = s.cron.AddFunc("@every 60s",
-		s.enqueueTask(namespace, utils.SendNotificationTask, false, utils.LowTaskOpts()...))
+		s.enqueueTask(namespace, utils.TriggerSendNotificationsTask, false, utils.DefaultTaskOpts()...))
 	if err != nil {
 		return err
 	}
@@ -331,7 +309,7 @@ func (s *Scheduler) addCronJobs(ctx context.Context) error {
 	}
 	jobIDs = append(jobIDs, jobID)
 
-	jobID, err = s.cron.AddFunc("@every 1h",
+	jobID, err = s.cron.AddFunc("@every 15m",
 		s.enqueueTask(namespace, utils.AsynqDeleteAllArchivedTasks, true, utils.CritialTaskOpts()...))
 	if err != nil {
 		return err
@@ -340,18 +318,6 @@ func (s *Scheduler) addCronJobs(ctx context.Context) error {
 
 	jobID, err = s.cron.AddFunc("@every 12h",
 		s.enqueueTask(namespace, utils.RedisRewriteAOF, true, utils.CritialTaskOpts()...))
-	if err != nil {
-		return err
-	}
-	jobIDs = append(jobIDs, jobID)
-
-	jobID, err = s.cron.AddFunc("@every 2h", s.enqueueTask(namespace, utils.UpdateLicenseTask, true, utils.CritialTaskOpts()...))
-	if err != nil {
-		return err
-	}
-	jobIDs = append(jobIDs, jobID)
-
-	jobID, err = s.cron.AddFunc("@every 1h", s.enqueueTask(namespace, utils.ReportLicenseUsageTask, true, utils.CritialTaskOpts()...))
 	if err != nil {
 		return err
 	}
@@ -391,8 +357,6 @@ func (s *Scheduler) startInitJobs(ctx context.Context) error {
 	}
 
 	log.Info().Msgf("Start immediate cronjobs for namespace %s", namespace)
-	s.enqueueTask(namespace, utils.CheckAgentUpgradeTask, true)()
-	s.enqueueTask(namespace, utils.CheckCloudScannerAgentUpgradeTask, true)()
 	s.enqueueTask(namespace, utils.SyncRegistryPostgresNeo4jTask, true, utils.CritialTaskOpts()...)()
 	s.enqueueTask(namespace, utils.ReportCleanUpTask, true, utils.CritialTaskOpts()...)()
 	s.enqueueTask(namespace, utils.CachePostureProviders, true, utils.CritialTaskOpts()...)()

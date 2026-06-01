@@ -11,6 +11,7 @@ import { useDocumentTitle } from '@/utils/useDocumentTitle';
 
 function App() {
   const { setMode, userSelectedMode, mode } = useThemeMode();
+
   useDocumentTitle();
   return (
     <QueryClientProvider client={queryClient}>

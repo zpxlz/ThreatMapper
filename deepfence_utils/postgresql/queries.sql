@@ -628,7 +628,7 @@ LIMIT 1;
 -- name: GetIntegrationsFromIDs :many
 SELECT *
 FROM integration
-WHERE id = ANY($1::int[]);
+WHERE id = ANY ($1::int[]);
 
 -- name: GetIntegrationsFromType :many
 SELECT *
@@ -713,60 +713,39 @@ FROM scheduler
 WHERE id = $1
   AND is_system = 'f';
 
--- name: UpsertLicense :one
-INSERT INTO license (license_key, start_date, end_date, no_of_hosts, current_hosts, is_active, license_type,
-                     deepfence_support_email, notification_threshold_percentage, registry_credentials, message,
-                     description, no_of_cloud_accounts, no_of_registries, no_of_images_in_registry, license_email,
-                     license_email_domain)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-ON CONFLICT (license_key) DO UPDATE
-    SET start_date                        = $2,
-        end_date                          = $3,
-        no_of_hosts                       = $4,
-        current_hosts                     = $5,
-        is_active                         = $6,
-        license_type                      = $7,
-        deepfence_support_email           = $8,
-        notification_threshold_percentage = $9,
-        registry_credentials              = $10,
-        message                           = $11,
-        description                       = $12,
-        no_of_cloud_accounts              = $13,
-        no_of_registries                  = $14,
-        no_of_images_in_registry          = $15,
-        license_email                     = $16,
-        license_email_domain              = $17
+-- name: UpdateIntegrationLastEventUpdatedAt :exec
+UPDATE integration
+SET last_event_updated_at = $2
+WHERE id = $1;
+
+-- name: SetIntegrationMetrics :exec
+UPDATE integration
+SET metrics = $2
+WHERE id = $1;
+
+-- name: GetIntegrationMetrics :one
+SELECT metrics
+FROM integration
+WHERE id = $1;
+
+-- name: UpsertDeepfenceCommunication :one
+INSERT INTO deepfence_communication (id, title, content, link, link_title, button_content)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (id) DO UPDATE
+    SET title          = $2,
+        content        = $3,
+        link           = $4,
+        link_title     = $5,
+        button_content = $6
 RETURNING *;
 
--- name: GetLicenseByKey :one
+-- name: GetUnreadDeepfenceCommunication :many
 SELECT *
-FROM license
-WHERE license_key = $1
-LIMIT 1;
+FROM deepfence_communication
+WHERE read = false
+ORDER BY created_at;
 
--- name: GetLicense :one
-SELECT *
-FROM license
-LIMIT 1;
-
--- name: GetActiveLicense :one
-SELECT *
-FROM license
-WHERE is_active = true
-ORDER BY end_date DESC
-LIMIT 1;
-
--- name: CountLicenses :one
-SELECT count(*)
-FROM license;
-
--- name: UpdateNotificationThreshold :exec
-UPDATE license
-SET notification_threshold_percentage = $1,
-    notification_threshold_updated_at = now()
-WHERE license_key = $2;
-
--- name: DeleteLicense :exec
-DELETE
-FROM license
-WHERE license_key = $1;
+-- name: MarkDeepfenceCommunicationRead :exec
+UPDATE deepfence_communication
+SET read = true
+WHERE id = $1;

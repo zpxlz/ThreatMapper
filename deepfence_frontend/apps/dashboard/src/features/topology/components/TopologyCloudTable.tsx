@@ -11,18 +11,22 @@ import {
 } from 'ui-components';
 
 import { DetailedNodeSummary } from '@/api/generated';
+import { DetailModal, useDetailModalState } from '@/components/detail-modal-stack';
 import { DFLink } from '@/components/DFLink';
 import { MinusCircleLineIcon } from '@/components/icons/common/MinusCircleLine';
 import { PlusCircleLineIcon } from '@/components/icons/common/PlusCircleLine';
 import { TruncatedText } from '@/components/TruncatedText';
-import { NodeDetailsStackedModal } from '@/features/topology/components/NodeDetailsStackedModal';
 import {
   TopologyLoaderData,
   useTopologyActionDeduplicator,
 } from '@/features/topology/data-components/topologyLoader';
 import { TopologyAction } from '@/features/topology/types/graph';
 import { TopologyTreeData } from '@/features/topology/types/table';
-import { itemExpands, itemHasDetails } from '@/features/topology/utils/expand-collapse';
+import {
+  isCloudServiceNode,
+  itemExpands,
+  itemHasDetails,
+} from '@/features/topology/utils/expand-collapse';
 import {
   getExpandedIdsFromTreeData,
   GraphStorageManager,
@@ -33,6 +37,7 @@ export function TopologyCloudTable() {
   const { isRefreshInProgress, treeData, action, ...graphDataManagerFunctions } =
     useTableDataManager();
   const graphDataManagerFunctionsRef = useRef(graphDataManagerFunctions);
+  const { detailModalItem, setDetailModalItem } = useDetailModalState();
 
   graphDataManagerFunctionsRef.current = graphDataManagerFunctions;
 
@@ -43,11 +48,6 @@ export function TopologyCloudTable() {
       desc: false,
     },
   ]);
-  const [clickedItem, setClickedItem] = useState<{
-    nodeId: string;
-    nodeType: string;
-    parentId?: string;
-  }>();
 
   const columnHelper = createColumnHelper<(typeof treeData)[number]>();
 
@@ -113,11 +113,40 @@ export function TopologyCloudTable() {
                   href="#"
                   onClick={(e) => {
                     e.preventDefault();
-                    setClickedItem({
-                      nodeId: info.row.original.id!,
-                      nodeType: info.row.original.type!,
-                      parentId: info.row.original.immediate_parent_id,
-                    });
+                    const nodeId = info.row.original.id!;
+                    const nodeType = info.row.original.type!;
+                    if (nodeType === 'host') {
+                      setDetailModalItem({
+                        kind: 'host',
+                        nodeId,
+                      });
+                    } else if (nodeType === 'container') {
+                      setDetailModalItem({
+                        kind: 'container',
+                        nodeId,
+                      });
+                    } else if (nodeType === 'process') {
+                      setDetailModalItem({
+                        kind: 'process',
+                        nodeId,
+                      });
+                    } else if (nodeType === 'container_image') {
+                      setDetailModalItem({
+                        kind: 'container_image',
+                        nodeId,
+                      });
+                    } else if (nodeType === 'pod') {
+                      setDetailModalItem({
+                        kind: 'pod',
+                        nodeId,
+                      });
+                    } else if (isCloudServiceNode({ type: nodeType })) {
+                      setDetailModalItem({
+                        kind: 'cloud_service',
+                        nodeType,
+                        region: info.row.original.immediate_parent_id ?? '',
+                      });
+                    }
                   }}
                   className="flex-1 shrink-0 truncate pl-2"
                 >
@@ -190,12 +219,11 @@ export function TopologyCloudTable() {
         }}
         getSubRows={(row) => row.children ?? []}
       />
-      {clickedItem ? (
-        <NodeDetailsStackedModal
-          node={clickedItem}
-          open={true}
-          onOpenChange={(open) => {
-            if (!open) setClickedItem(undefined);
+      {detailModalItem ? (
+        <DetailModal
+          itemInfo={detailModalItem}
+          onItemClose={() => {
+            setDetailModalItem(null);
           }}
         />
       ) : null}

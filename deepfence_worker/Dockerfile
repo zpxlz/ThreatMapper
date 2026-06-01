@@ -6,7 +6,7 @@ FROM $IMAGE_REPOSITORY/deepfence_secret_scanner_ce:$DF_IMG_TAG AS secretscanner
 FROM $IMAGE_REPOSITORY/deepfence_malware_scanner_ce:$DF_IMG_TAG AS yarahunter
 FROM $IMAGE_REPOSITORY/deepfence_glibc_builder_ce:$DF_IMG_TAG AS builder-yara
 
-FROM debian:12-slim AS final
+FROM debian:trixie-slim AS final
 
 ARG AGENT_BINARY_DIST_RELATIVE
 
@@ -67,7 +67,7 @@ COPY --from=packagescanner /usr/local/bin/syft /usr/local/bin/syft
 COPY --from=packagescanner /usr/local/bin/grype /usr/local/bin/grype
 COPY --from=packagescanner /root/.grype.yaml /usr/local/bin/grype.yaml
 
-# COPY --from=secretscanner /home/deepfence/usr/config.yaml /config.yaml
+COPY --from=secretscanner /home/deepfence/usr/config.yaml /secret-config/config.yaml
 
 COPY --from=yarahunter /home/deepfence/usr/config.yaml /malware-config/config.yaml
 

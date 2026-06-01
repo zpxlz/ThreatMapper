@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/deepfence/ThreatMapper/deepfence_server/model"
+	"github.com/deepfence/ThreatMapper/deepfence_server/reporters"
 	reporters_scan "github.com/deepfence/ThreatMapper/deepfence_server/reporters/scan"
 	ctl "github.com/deepfence/ThreatMapper/deepfence_utils/controls"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/directory"
@@ -19,6 +20,9 @@ import (
 
 var (
 	cloudAccountNodeType = ctl.ResourceTypeToString(ctl.CloudAccount)
+	refreshAccountFilter = reporters.FieldsFilters{
+		NotContainsFilter: reporters.ContainsFilter{FieldsValues: map[string][]interface{}{"refresh_status": {utils.ScanStatusStarting}}},
+	}
 )
 
 func (h *Handler) RegisterCloudNodeAccountHandler(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +36,7 @@ func (h *Handler) RegisterCloudNodeAccountHandler(w http.ResponseWriter, r *http
 	}
 	err = h.Validator.Struct(req)
 	if err != nil {
-		log.Error().Msg(err.Error())
+		log.Error().Err(err).Msgf("register request: %+v", req)
 		h.respondError(&ValidatorError{err: err}, w)
 		return
 	}
@@ -52,53 +56,61 @@ func (h *Handler) RegisterCloudNodeAccountHandler(w http.ResponseWriter, r *http
 		}
 		orgNodeID := fmt.Sprintf("%s-%s-cloud-org", req.CloudProvider, orgAccountID)
 		orgAccountNode := map[string]interface{}{
-			"node_id":        orgNodeID,
-			"cloud_provider": model.PostureProviderOrgMap[req.CloudProvider],
-			"node_name":      orgAccountID,
-			"account_name":   req.AccountName,
-			"version":        req.Version,
-			"node_type":      req.CloudProvider,
+			"node_id":           orgNodeID,
+			"cloud_provider":    model.PostureProviderOrgMap[req.CloudProvider],
+			"node_name":         orgAccountID,
+			"account_name":      req.AccountName,
+			"version":           req.Version,
+			"node_type":         req.CloudProvider,
+			"installation_id":   req.InstallationID,
+			"persistent_volume": req.PersistentVolumeSupported,
 		}
-		err = model.UpsertCloudComplianceNode(ctx, orgAccountNode, "", req.HostNodeID)
+		err = model.UpsertCloudAccount(ctx, orgAccountNode, req.IsOrganizationDeployment, req.HostNodeID, req.InitialRequest)
 		if err != nil {
+			log.Error().Msg(err.Error())
 			h.complianceError(w, err.Error())
 			return
 		}
-		for _, monitoredAccount := range monitoredAccounts {
+		monitoredNodes := make([]map[string]interface{}, len(monitoredAccounts))
+		for i, monitoredAccount := range monitoredAccounts {
 			err = h.Validator.Struct(monitoredAccount)
 			if err != nil {
 				log.Error().Msg(err.Error())
 				h.respondError(&ValidatorError{err: err}, w)
 				return
 			}
-			monitoredNode := map[string]interface{}{
-				"node_id":         monitoredAccount.NodeID,
-				"cloud_provider":  req.CloudProvider,
-				"node_name":       monitoredAccount.AccountID,
-				"account_name":    monitoredAccount.AccountName,
-				"organization_id": orgNodeID,
-				"version":         req.Version,
-				"node_type":       req.CloudProvider,
+			monitoredNodes[i] = map[string]interface{}{
+				"node_id":           monitoredAccount.NodeID,
+				"cloud_provider":    req.CloudProvider,
+				"node_name":         monitoredAccount.AccountID,
+				"account_name":      monitoredAccount.AccountName,
+				"organization_id":   orgNodeID,
+				"version":           req.Version,
+				"node_type":         req.CloudProvider,
+				"installation_id":   req.InstallationID,
+				"persistent_volume": req.PersistentVolumeSupported,
 			}
-			err = model.UpsertCloudComplianceNode(ctx, monitoredNode, orgNodeID, req.HostNodeID)
-			if err != nil {
-				log.Error().Msgf("Error while upserting node: %+v", err)
-				h.complianceError(w, err.Error())
-				return
-			}
+		}
+		err = model.UpsertChildCloudAccounts(ctx, monitoredNodes, orgNodeID, req.InstallationID, req.HostNodeID, req.InitialRequest)
+		if err != nil {
+			log.Error().Msgf("Error while upserting node: %+v", err)
+			h.complianceError(w, err.Error())
+			return
 		}
 	} else {
 		log.Debug().Msgf("Single account monitoring for node: %s", nodeID)
 		node := map[string]interface{}{
-			"node_id":        nodeID,
-			"cloud_provider": req.CloudProvider,
-			"node_name":      req.AccountID,
-			"account_name":   req.AccountName,
-			"version":        req.Version,
-			"node_type":      req.CloudProvider,
+			"node_id":           nodeID,
+			"cloud_provider":    req.CloudProvider,
+			"node_name":         req.AccountID,
+			"account_name":      req.AccountName,
+			"version":           req.Version,
+			"node_type":         req.CloudProvider,
+			"installation_id":   req.InstallationID,
+			"persistent_volume": req.PersistentVolumeSupported,
 		}
 		log.Debug().Msgf("Node for upsert: %+v", node)
-		err = model.UpsertCloudComplianceNode(ctx, node, "", req.HostNodeID)
+		err = model.UpsertCloudAccount(ctx, node, req.IsOrganizationDeployment, req.HostNodeID, req.InitialRequest)
 		if err != nil {
 			log.Error().Msgf("Error while upserting node: %+v", err)
 			h.complianceError(w, err.Error())
@@ -124,10 +136,16 @@ func (h *Handler) RefreshCloudAccountHandler(w http.ResponseWriter, r *http.Requ
 		nodeIdentifiers[i] = model.NodeIdentifier{NodeID: id, NodeType: cloudAccountNodeType}
 	}
 
-	cloudNodeIds, err := reporters_scan.GetCloudAccountIDs(r.Context(), nodeIdentifiers)
+	cloudNodeIds, err := reporters_scan.GetCloudAccountIDs(r.Context(), nodeIdentifiers, &refreshAccountFilter)
 	if err != nil {
 		log.Error().Msgf(err.Error())
 		h.respondError(&BadDecoding{err}, w)
+		return
+	}
+
+	if len(cloudNodeIds) == 0 {
+		// Refresh already in progress for all requested cloud accounts
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 

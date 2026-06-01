@@ -34,13 +34,8 @@ var (
 )
 
 func init() {
-	// for aws s3
-	GRYPE_DB_UPDATE_URL = fmt.Sprintf("GRYPE_DB_UPDATE_URL=%s://%s.s3.%s.amazonaws.com/database/vulnerability/listing.json",
-		directory.FileServerProtocol, directory.FileServerDatabaseBucket, directory.FileServerRegion)
-	if directory.FileServerHost != "s3.amazonaws.com" {
-		GRYPE_DB_UPDATE_URL = fmt.Sprintf("GRYPE_DB_UPDATE_URL=%s://%s:%s/database/database/vulnerability/listing.json",
-			directory.FileServerProtocol, directory.FileServerHost, directory.FileServerPort)
-	}
+	GRYPE_DB_UPDATE_URL = fmt.Sprintf("GRYPE_DB_UPDATE_URL=%s://%s:%s/database/database/vulnerability",
+		directory.FileServerProtocol, directory.FileServerHost, directory.FileServerPort)
 	log.Info().Msg(GRYPE_DB_UPDATE_URL)
 }
 
@@ -86,7 +81,7 @@ func (s SbomParser) ScanSBOM(ctx context.Context, task *asynq.Task) error {
 				return err
 			}
 			s.ingestC <- &kgo.Record{
-				Topic:   utils.VulnerabilityScanStatus,
+				Topic:   utils.TopicWithNamespace(utils.VulnerabilityScanStatus, string(tenantID)),
 				Value:   sb,
 				Headers: rh,
 			}
@@ -155,6 +150,7 @@ func (s SbomParser) ScanSBOM(ctx context.Context, task *asynq.Task) error {
 		ScanID:                params.ScanID,
 		ImageID:               params.ImageID,
 		ContainerName:         params.ContainerName,
+		GrypeConfigPath:       grypeConfig,
 	}
 
 	report, err := grype.PopulateFinalReport(vulnerabilities, cfg)
@@ -177,7 +173,7 @@ func (s SbomParser) ScanSBOM(ctx context.Context, task *asynq.Task) error {
 			log.Error().Msg(err.Error())
 		} else {
 			s.ingestC <- &kgo.Record{
-				Topic:   utils.VulnerabilityScan,
+				Topic:   utils.TopicWithNamespace(utils.VulnerabilityScan, string(tenantID)),
 				Value:   cb,
 				Headers: rh,
 			}

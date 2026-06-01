@@ -792,6 +792,7 @@ export const searchQueries = createQueryKeys('search', {
     cloudAccounts?: string[];
     clusterIds: string[];
     hosts: string[];
+    userDefinedTags?: string[];
   }) => {
     return {
       queryKey: [filters],
@@ -809,6 +810,7 @@ export const searchQueries = createQueryKeys('search', {
           cloudAccounts,
           clusterIds,
           hosts,
+          userDefinedTags,
         } = filters;
         const searchSearchNodeReq: SearchSearchNodeReq = {
           node_filter: {
@@ -820,6 +822,9 @@ export const searchQueries = createQueryKeys('search', {
                   pseudo: [false],
                   active: [true],
                 },
+              },
+              contains_in_array_filter: {
+                filter_in: {},
               },
               match_filter: {
                 filter_in: {},
@@ -914,6 +919,13 @@ export const searchQueries = createQueryKeys('search', {
             cloud_account_id: cloudAccounts,
           };
         }
+        if (userDefinedTags?.length) {
+          searchSearchNodeReq.node_filter.filters.contains_in_array_filter!.filter_in = {
+            ...searchSearchNodeReq.node_filter.filters.contains_in_array_filter!
+              .filter_in,
+            tags: userDefinedTags,
+          };
+        }
         if (order) {
           searchSearchNodeReq.node_filter.filters.order_filter.order_fields?.push({
             field_name: order.sortBy,
@@ -977,11 +989,13 @@ export const searchQueries = createQueryKeys('search', {
     };
     agentRunning?: boolean[];
     clusterIds?: string[];
+    userDefinedTags?: string[];
   }) => {
     return {
       queryKey: [filters],
       queryFn: async () => {
-        const { page, pageSize, order, agentRunning, clusterIds } = filters;
+        const { page, pageSize, order, agentRunning, clusterIds, userDefinedTags } =
+          filters;
         const searchSearchNodeReq: SearchSearchNodeReq = {
           node_filter: {
             filters: {
@@ -990,6 +1004,9 @@ export const searchQueries = createQueryKeys('search', {
                 filter_in: {
                   active: [true],
                 },
+              },
+              contains_in_array_filter: {
+                filter_in: {},
               },
               match_filter: {
                 filter_in: null,
@@ -1022,6 +1039,13 @@ export const searchQueries = createQueryKeys('search', {
           searchSearchNodeReq.node_filter.filters.contains_filter.filter_in = {
             ...searchSearchNodeReq.node_filter.filters.contains_filter.filter_in,
             kubernetes_cluster_id: clusterIds,
+          };
+        }
+        if (userDefinedTags?.length) {
+          searchSearchNodeReq.node_filter.filters.contains_in_array_filter!.filter_in = {
+            ...searchSearchNodeReq.node_filter.filters.contains_in_array_filter!
+              .filter_in,
+            tags: userDefinedTags,
           };
         }
         const searchKubernetesClustersApi = apiWrapper({
@@ -1086,6 +1110,7 @@ export const searchQueries = createQueryKeys('search', {
     clusterIds: string[];
     containers: string[];
     kubernetesNamespace: string[];
+    userDefinedTags?: string[];
   }) => {
     return {
       queryKey: [filters],
@@ -1101,6 +1126,7 @@ export const searchQueries = createQueryKeys('search', {
           clusterIds,
           containers,
           kubernetesNamespace,
+          userDefinedTags,
         } = filters;
         const searchSearchNodeReq: SearchSearchNodeReq = {
           node_filter: {
@@ -1114,6 +1140,9 @@ export const searchQueries = createQueryKeys('search', {
                     ? { kubernetes_namespace: kubernetesNamespace }
                     : {}),
                 },
+              },
+              contains_in_array_filter: {
+                filter_in: {},
               },
               match_filter: {
                 filter_in: null,
@@ -1184,6 +1213,13 @@ export const searchQueries = createQueryKeys('search', {
             node_id: containers,
           };
         }
+        if (userDefinedTags?.length) {
+          searchSearchNodeReq.node_filter.filters.contains_in_array_filter!.filter_in = {
+            ...searchSearchNodeReq.node_filter.filters.contains_in_array_filter!
+              .filter_in,
+            tags: userDefinedTags,
+          };
+        }
         if (order) {
           searchSearchNodeReq.node_filter.filters.order_filter.order_fields?.push({
             field_name: order.sortBy,
@@ -1250,6 +1286,7 @@ export const searchQueries = createQueryKeys('search', {
       sortBy: string;
       descending: boolean;
     };
+    userDefinedTags?: string[];
   }) => {
     return {
       queryKey: [filters],
@@ -1263,6 +1300,7 @@ export const searchQueries = createQueryKeys('search', {
           clusterNames,
           kubernetesStatus,
           kubernetesNamespace,
+          userDefinedTags,
         } = filters;
         const searchSearchNodeReq: SearchSearchNodeReq = {
           node_filter: {
@@ -1280,6 +1318,9 @@ export const searchQueries = createQueryKeys('search', {
                     ? { kubernetes_namespace: kubernetesNamespace }
                     : {}),
                 },
+              },
+              contains_in_array_filter: {
+                filter_in: {},
               },
               match_filter: {
                 filter_in: null,
@@ -1305,6 +1346,13 @@ export const searchQueries = createQueryKeys('search', {
           searchSearchNodeReq.node_filter.filters.contains_filter.filter_in = {
             ...searchSearchNodeReq.node_filter.filters.contains_filter.filter_in,
             kubernetes_state: [state],
+          };
+        }
+        if (userDefinedTags?.length) {
+          searchSearchNodeReq.node_filter.filters.contains_in_array_filter!.filter_in = {
+            ...searchSearchNodeReq.node_filter.filters.contains_in_array_filter!
+              .filter_in,
+            tags: userDefinedTags,
           };
         }
 
@@ -1515,7 +1563,7 @@ export const searchQueries = createQueryKeys('search', {
       },
     };
   },
-  cloudResourcesCount: () => {
+  cloudResourcesCount: ({ maxSize }: { maxSize: number }) => {
     return {
       queryKey: ['cloudResourcesCount'],
       queryFn: async () => {
@@ -1539,7 +1587,7 @@ export const searchQueries = createQueryKeys('search', {
             },
             window: {
               offset: 0,
-              size: Number.MAX_SAFE_INTEGER,
+              size: maxSize,
             },
           },
         });
@@ -1643,6 +1691,194 @@ export const searchQueries = createQueryKeys('search', {
                 registryType: res.registry_type,
               };
             }),
+        };
+      },
+    };
+  },
+  secretRulesWithPagination: (filters: {
+    page?: number;
+    pageSize: number;
+    order?: {
+      sortBy: string;
+      descending: boolean;
+    };
+    masked?: boolean[];
+    severity?: string[];
+  }) => {
+    return {
+      queryKey: [filters],
+      queryFn: async () => {
+        const { page = 0, pageSize, order, masked, severity } = filters;
+
+        const searchApi = apiWrapper({
+          fn: getSearchApiClient().searchSecretRules,
+        });
+
+        const searchRequest: SearchSearchNodeReq = {
+          node_filter: {
+            filters: {
+              compare_filter: null,
+              contains_filter: {
+                filter_in: {},
+              },
+              match_filter: {
+                filter_in: {},
+              },
+              order_filter: {
+                order_fields: null,
+              },
+            },
+            in_field_filter: null,
+            window: { offset: 0, size: 0 },
+          },
+          window: { offset: page * pageSize, size: pageSize },
+        };
+
+        if (order) {
+          searchRequest.node_filter.filters.order_filter.order_fields = [
+            {
+              field_name: order.sortBy,
+              descending: order.descending,
+            },
+          ];
+        }
+
+        if (masked && masked.length > 0) {
+          searchRequest.node_filter.filters.contains_filter.filter_in!['masked'] = masked;
+        }
+
+        if (severity && severity.length > 0) {
+          searchRequest.node_filter.filters.contains_filter.filter_in!['severity'] =
+            severity;
+        }
+
+        const searchRulesPromise = searchApi({
+          searchSearchNodeReq: searchRequest,
+        });
+
+        const countApi = apiWrapper({
+          fn: getSearchApiClient().searchSecretRulesCount,
+        });
+
+        const countRulesPromise = countApi({
+          searchSearchNodeReq: {
+            ...searchRequest,
+            window: {
+              ...searchRequest.window,
+              size: 10 * searchRequest.window.size,
+            },
+          },
+        });
+        const [rulesData, rulesDataCount] = await Promise.all([
+          searchRulesPromise,
+          countRulesPromise,
+        ]);
+
+        if (!rulesData.ok) {
+          throw rulesData.error;
+        }
+        if (!rulesDataCount.ok) {
+          throw rulesDataCount.error;
+        }
+
+        return {
+          rules: rulesData.value,
+          currentPage: page,
+          totalRows: page * pageSize + rulesDataCount.value.count,
+        };
+      },
+    };
+  },
+  malwareRulesWithPagination: (filters: {
+    page?: number;
+    pageSize: number;
+    order?: {
+      sortBy: string;
+      descending: boolean;
+    };
+    masked?: boolean[];
+    severity?: string[];
+  }) => {
+    return {
+      queryKey: [filters],
+      queryFn: async () => {
+        const { page = 0, pageSize, order, masked, severity } = filters;
+
+        const searchApi = apiWrapper({
+          fn: getSearchApiClient().searchMalwareRules,
+        });
+
+        const searchRequest: SearchSearchNodeReq = {
+          node_filter: {
+            filters: {
+              compare_filter: null,
+              contains_filter: {
+                filter_in: {},
+              },
+              match_filter: {
+                filter_in: {},
+              },
+              order_filter: {
+                order_fields: null,
+              },
+            },
+            in_field_filter: null,
+            window: { offset: 0, size: 0 },
+          },
+          window: { offset: page * pageSize, size: pageSize },
+        };
+
+        if (order) {
+          searchRequest.node_filter.filters.order_filter.order_fields = [
+            {
+              field_name: order.sortBy,
+              descending: order.descending,
+            },
+          ];
+        }
+
+        if (masked && masked.length > 0) {
+          searchRequest.node_filter.filters.contains_filter.filter_in!['masked'] = masked;
+        }
+
+        if (severity && severity.length > 0) {
+          searchRequest.node_filter.filters.contains_filter.filter_in!['severity'] =
+            severity;
+        }
+
+        const searchRulesPromise = searchApi({
+          searchSearchNodeReq: searchRequest,
+        });
+
+        const countApi = apiWrapper({
+          fn: getSearchApiClient().searchMalwareRulesCount,
+        });
+
+        const countRulesPromise = countApi({
+          searchSearchNodeReq: {
+            ...searchRequest,
+            window: {
+              ...searchRequest.window,
+              size: 10 * searchRequest.window.size,
+            },
+          },
+        });
+        const [rulesData, rulesDataCount] = await Promise.all([
+          searchRulesPromise,
+          countRulesPromise,
+        ]);
+
+        if (!rulesData.ok) {
+          throw rulesData.error;
+        }
+        if (!rulesDataCount.ok) {
+          throw rulesDataCount.error;
+        }
+
+        return {
+          rules: rulesData.value,
+          currentPage: page,
+          totalRows: page * pageSize + rulesDataCount.value.count,
         };
       },
     };

@@ -62,7 +62,8 @@ import { TimesIcon } from '@/components/icons/common/Times';
 import { TrashLineIcon } from '@/components/icons/common/TrashLine';
 import { complianceType } from '@/components/scan-configure-forms/ComplianceScanConfigureForm';
 import { StopScanForm } from '@/components/scan-configure-forms/StopScanForm';
-import { ScanHistoryDropdown } from '@/components/scan-history/HistoryList';
+import { HistoryControlsSkeleton } from '@/components/scan-history/HistoryControlsSkeleton';
+import { ScanHistoryDropdown } from '@/components/scan-history/ScanHistoryDropdown';
 import { ScanStatusBadge } from '@/components/ScanStatusBadge';
 import {
   ScanStatusDeletePending,
@@ -95,6 +96,7 @@ import {
 } from '@/features/postures/utils';
 import { SuccessModalContent } from '@/features/settings/components/SuccessModalContent';
 import { invalidateAllQueries, queries } from '@/queries';
+import { queryClient } from '@/queries/client';
 import { useTheme } from '@/theme/ThemeContext';
 import {
   ComplianceScanNodeTypeEnum,
@@ -104,7 +106,11 @@ import {
 import { get403Message, getResponseErrors } from '@/utils/403';
 import { apiWrapper } from '@/utils/api';
 import { formatMilliseconds } from '@/utils/date';
-import { getBenchmarkPrettyName } from '@/utils/enum';
+import {
+  getBenchmarkPrettyName,
+  getMaskedUnmaskedPrettyName,
+  getPostureStatusPrettyName,
+} from '@/utils/enum';
 import { abbreviateNumber } from '@/utils/number';
 import {
   isScanComplete,
@@ -132,11 +138,18 @@ enum ActionEnumType {
   DELETE_SCAN = 'delete_scan',
 }
 
-type ActionData = {
-  action: ActionEnumType;
-  success: boolean;
-  message?: string;
-};
+type ActionData =
+  | {
+      action: Exclude<ActionEnumType, ActionEnumType.DELETE_SCAN>;
+      success: boolean;
+      message?: string;
+    }
+  | {
+      action: ActionEnumType.DELETE_SCAN;
+      success: boolean;
+      nextScanId: string | null;
+      message?: string;
+    };
 
 const action = async ({
   params: { scanId = '' },
@@ -269,14 +282,33 @@ const action = async ({
         return {
           action: actionType,
           message,
+          nextScanId: null,
           success: false,
         };
       }
       throw result.error;
     }
+    await queryClient.resetQueries({
+      queryKey: queries.common.scanHistories._def,
+    });
+
+    const historyData = await queryClient.ensureQueryData({
+      ...queries.common.scanHistories({
+        nodeId: formData.get('nodeId') as string,
+        nodeType: formData.get('nodeType') as string,
+        scanType: ScanTypeEnum.ComplianceScan,
+        size: 1,
+      }),
+    });
+
+    let nextScanId: string | null = null;
+    if ('data' in historyData && historyData.data.length) {
+      nextScanId = historyData.data[0].scanId;
+    }
     return {
       action: actionType,
       success: true,
+      nextScanId,
     };
   } else {
     throw new Error('Unknown action type');
@@ -407,17 +439,35 @@ const DeleteScanConfirmationModal = ({
   open,
   onOpenChange,
   scanId,
+  nodeId,
+  nodeType,
 }: {
   scanId: string;
   open: boolean;
-  onOpenChange: (open: boolean, deleteSuccessful: boolean) => void;
+  onOpenChange: (
+    open: boolean,
+    status: {
+      success: boolean;
+      nextScanId: string | null;
+    },
+  ) => void;
+  nodeId: string;
+  nodeType: string;
 }) => {
-  const [deleteSuccessful, setDeleteSuccessful] = useState(false);
+  const [deleteStatus, setDeleteStatus] = useState<{
+    success: boolean;
+    nextScanId: string | null;
+  }>({
+    success: false,
+    nextScanId: null,
+  });
   const fetcher = useFetcher<ActionData>();
   const onDeleteScan = () => {
     const formData = new FormData();
     formData.append('actionType', ActionEnumType.DELETE_SCAN);
     formData.append('scanId', scanId);
+    formData.append('nodeId', nodeId);
+    formData.append('nodeType', nodeType);
     fetcher.submit(formData, {
       method: 'post',
     });
@@ -425,14 +475,19 @@ const DeleteScanConfirmationModal = ({
 
   useEffect(() => {
     if (fetcher.data?.success) {
-      setDeleteSuccessful(true);
+      if (fetcher.data.action === ActionEnumType.DELETE_SCAN) {
+        setDeleteStatus({
+          success: true,
+          nextScanId: fetcher.data.nextScanId,
+        });
+      }
     }
   }, [fetcher]);
   return (
     <Modal
       open={open}
       onOpenChange={(open) => {
-        onOpenChange(open, deleteSuccessful);
+        onOpenChange(open, deleteStatus);
       }}
       size="s"
       title={
@@ -450,7 +505,7 @@ const DeleteScanConfirmationModal = ({
           <div className={'flex gap-x-4 justify-end'}>
             <Button
               size="md"
-              onClick={() => onOpenChange(false, deleteSuccessful)}
+              onClick={() => onOpenChange(false, deleteStatus)}
               type="button"
               variant="outline"
             >
@@ -580,11 +635,7 @@ const ScanHistory = () => {
       <span className="pl-2 pr-3 text-t3 text-text-text-and-icon uppercase">
         scan time
       </span>
-      <Suspense
-        fallback={
-          <div className="text-text-text-and-icon text-p9">Fetching scan history...</div>
-        }
-      >
+      <Suspense fallback={<HistoryControlsSkeleton />}>
         <HistoryControls />
       </Suspense>
     </div>
@@ -607,44 +658,22 @@ const HistoryControls = () => {
   const [showScanCompareModal, setShowScanCompareModal] = useState<boolean>(false);
   const [scanIdToDelete, setScanIdToDelete] = useState<string | null>(null);
 
-  const [compareInput, setCompareInput] = useState<{
-    baseScanId: string;
-    toScanId: string;
-    baseScanTime: number;
-    toScanTime: number;
-    showScanTimeModal: boolean;
-  }>({
-    baseScanId: '',
-    toScanId: '',
-    baseScanTime: created_at ?? 0,
-    toScanTime: 0,
-    showScanTimeModal: false,
-  });
+  const [compareBaseScanInfo, setCompareBaseScanInfo] = useState<{
+    scanId: string;
+    createdAt: number;
+  } | null>(null);
 
-  const { data: historyData, refetch } = useSuspenseQuery({
-    ...queries.common.scanHistories({
-      scanType: ScanTypeEnum.ComplianceScan,
-      nodeId: node_id ?? '',
-      nodeType: node_type ?? '',
-      size: Number.MAX_SAFE_INTEGER,
-    }),
-  });
+  const [compareToScanInfo, setCompareToScanInfo] = useState<{
+    scanId: string;
+    createdAt: number;
+  } | null>(null);
 
-  useEffect(() => {
-    refetch();
-  }, [scan_id]);
+  const [showCompareToScanSelectionModal, setShowCompareToScanSelectionModal] =
+    useState(false);
 
   if (!node_id || !node_type || !scan_id) {
     throw new Error('Scan id, Node type and Node id are required');
   }
-
-  const onCompareScanClick = (baseScanTime: number) => {
-    setCompareInput({
-      ...compareInput,
-      baseScanTime,
-      showScanTimeModal: true,
-    });
-  };
 
   return (
     <div className="flex items-center relative flex-grow gap-4">
@@ -656,90 +685,105 @@ const HistoryControls = () => {
           scanType={ScanTypeEnum.CloudComplianceScan}
         />
       )}
-      {compareInput.showScanTimeModal && (
+      {showCompareToScanSelectionModal && (
         <CompareScanInputModal
-          showDialog={true}
-          setShowDialog={() => {
-            setCompareInput((input) => {
-              return {
-                ...input,
-                showScanTimeModal: false,
-              };
-            });
+          showDialog={showCompareToScanSelectionModal}
+          setShowDialog={(open, compareToScanInfo) => {
+            if (!open) {
+              if (compareToScanInfo) {
+                setCompareToScanInfo(compareToScanInfo);
+                setShowScanCompareModal(true);
+              } else {
+                setCompareBaseScanInfo(null);
+                setCompareToScanInfo(null);
+              }
+              setShowCompareToScanSelectionModal(false);
+            }
           }}
-          setShowScanCompareModal={setShowScanCompareModal}
-          scanHistoryData={historyData.data}
-          setCompareInput={setCompareInput}
-          compareInput={compareInput}
           nodeId={node_id}
           nodeType={node_type}
           scanType={ScanTypeEnum.ComplianceScan}
+          baseScanInfo={compareBaseScanInfo!}
         />
       )}
       {showScanCompareModal && (
         <PosturesCompare
           open={showScanCompareModal}
           onOpenChange={setShowScanCompareModal}
-          compareInput={compareInput}
+          compareInput={{
+            baseScanId: compareBaseScanInfo?.scanId ?? '',
+            baseScanTime: compareBaseScanInfo?.createdAt ?? 0,
+            toScanId: compareToScanInfo?.scanId ?? '',
+            toScanTime: compareToScanInfo?.createdAt ?? 0,
+          }}
         />
       )}
       <div className="flex items-center gap-x-3">
         <ScanHistoryDropdown
-          scans={[...(historyData?.data ?? [])].reverse().map((item) => ({
-            id: item.scanId,
-            isCurrent: item.scanId === scan_id,
-            status: item.status,
-            timestamp: item.createdAt,
-            showScanCompareButton: true,
-            onScanTimeCompareButtonClick: onCompareScanClick,
-            onDeleteClick: (id) => {
-              setScanIdToDelete(id);
-            },
-            onDownloadClick: () => {
-              downloadScan({
-                scanId: item.scanId,
-                scanType: UtilsReportFiltersScanTypeEnum.Compliance,
-                nodeType: node_type as UtilsReportFiltersNodeTypeEnum,
-              });
-            },
-            onScanClick: () => {
-              navigate(
-                generatePath('/posture/scan-results/:nodeType/:scanId', {
-                  scanId: encodeURIComponent(item.scanId),
-                  nodeType,
-                }),
-                {
-                  replace: true,
-                },
-              );
-            },
-          }))}
-          currentTimeStamp={formatMilliseconds(created_at ?? '')}
+          selectedScan={{
+            id: scan_id,
+            status: scanStatusResult?.status ?? '',
+            timestamp: scanStatusResult?.created_at ?? 0,
+          }}
+          nodeInfo={{
+            nodeId: node_id,
+            nodeType: node_type,
+            scanType: ScanTypeEnum.ComplianceScan,
+          }}
+          onScanDownloadClick={(scanId) => {
+            downloadScan({
+              scanId: scanId,
+              scanType: UtilsReportFiltersScanTypeEnum.Compliance,
+              nodeType: node_type as UtilsReportFiltersNodeTypeEnum,
+            });
+          }}
+          onScanClick={(scanId) => {
+            navigate(
+              generatePath('/posture/scan-results/:nodeType/:scanId', {
+                scanId: encodeURIComponent(scanId),
+                nodeType,
+              }),
+              {
+                replace: true,
+              },
+            );
+          }}
+          onScanDeleteClick={(scanId) => {
+            setScanIdToDelete(scanId);
+          }}
+          onScanCompareClick={({ scanId, createdAt }) => {
+            setCompareBaseScanInfo({
+              scanId,
+              createdAt,
+            });
+            setShowCompareToScanSelectionModal(true);
+          }}
         />
 
         {scanIdToDelete && (
           <DeleteScanConfirmationModal
             scanId={scanIdToDelete}
             open={!!scanIdToDelete}
-            onOpenChange={(open, deleteSuccessful) => {
-              if (!open) {
-                if (deleteSuccessful && scanIdToDelete === scan_id) {
-                  const latestScan = [...historyData.data].reverse().find((scan) => {
-                    return scan.scanId !== scanIdToDelete;
-                  });
-                  if (latestScan) {
-                    navigate(
-                      generatePath('./../:scanId', {
-                        scanId: encodeURIComponent(latestScan.scanId),
-                      }),
-                      { replace: true },
-                    );
-                  } else {
-                    goBack();
-                  }
+            nodeId={node_id}
+            nodeType={node_type}
+            onOpenChange={(open, status) => {
+              if (open) return;
+              if (status.success && scanIdToDelete === scan_id) {
+                // if deleting current scan Id
+                if (status.nextScanId) {
+                  navigate(
+                    generatePath('./../:scanId', {
+                      scanId: encodeURIComponent(status.nextScanId),
+                    }),
+                    {
+                      replace: true,
+                    },
+                  );
+                } else {
+                  goBack();
                 }
-                setScanIdToDelete(null);
               }
+              setScanIdToDelete(null);
             }}
           />
         )}
@@ -792,11 +836,11 @@ const HistoryControls = () => {
                     }
                     disabled={fetchStatus !== 'idle'}
                     onClick={() => {
-                      setCompareInput({
-                        ...compareInput,
-                        baseScanTime: created_at ?? 0,
-                        showScanTimeModal: true,
+                      setCompareBaseScanInfo({
+                        scanId: scan_id,
+                        createdAt: created_at ?? 0,
                       });
+                      setShowCompareToScanSelectionModal(true);
                     }}
                   >
                     Compare scan
@@ -989,6 +1033,23 @@ const getAppliedFiltersCount = (searchParams: URLSearchParams) => {
   return Object.keys(FILTER_SEARCHPARAMS).reduce((prev, curr) => {
     return prev + searchParams.getAll(curr).length;
   }, 0);
+};
+
+const getPrettyNameForAppliedFilters = ({
+  key,
+  value,
+}: {
+  key: string;
+  value: string;
+}) => {
+  switch (key) {
+    case 'visibility':
+      return getMaskedUnmaskedPrettyName(value);
+    case 'status':
+      return getPostureStatusPrettyName(value as ModelComplianceStatusEnum);
+    default:
+      return value;
+  }
 };
 
 const Filters = () => {
@@ -1213,7 +1274,7 @@ const Filters = () => {
               <FilterBadge
                 key={`${key}-${value}`}
                 onRemove={onFilterRemove({ key, value })}
-                text={`${FILTER_SEARCHPARAMS[key]}: ${value}`}
+                text={`${FILTER_SEARCHPARAMS[key]}: ${getPrettyNameForAppliedFilters({ key, value })}`}
               />
             );
           })}
@@ -1245,7 +1306,7 @@ const PostureResults = () => {
   const [rowSelectionState, setRowSelectionState] = useState<RowSelectionState>({});
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [idsToDelete, setIdsToDelete] = useState<string[]>([]);
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
   const fetcher = useFetcher<ActionData>();
 
   const onTableAction = useCallback(
@@ -1284,6 +1345,7 @@ const PostureResults = () => {
             onClick={() => {
               setFiltersExpanded((prev) => !prev);
             }}
+            data-testid="filterButtonIdForTable"
           >
             Filter
           </Button>

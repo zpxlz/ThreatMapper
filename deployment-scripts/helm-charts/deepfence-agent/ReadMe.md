@@ -5,7 +5,7 @@
 **Quick start**
 
 ```bash
-helm repo add deepfence https://deepfence-helm-charts.s3.amazonaws.com/threatmapper
+helm repo add deepfence https://artifacts.threatmapper.org/helm-charts/threatmapper
 ```
 
 ```bash
@@ -21,7 +21,7 @@ helm install deepfence-agent deepfence/deepfence-agent \
 **Detailed setup**
 
 ```bash
-helm repo add deepfence https://deepfence-helm-charts.s3.amazonaws.com/threatmapper
+helm repo add deepfence https://artifacts.threatmapper.org/helm-charts/threatmapper
 ```
 
 - Create values file
@@ -48,9 +48,9 @@ managementConsoleUrl: ""
 - Set image tag
 ```yaml
 global:
-  # this image tag is used every where for agents
+  # this image tag is used everywhere for agents
   # to override set tag at agents level
-  imageTag: 2.0.1
+  imageTag: 2.5.2
 ```
 - Set deepfence auth key
 Set authentication key when it is enabled in management console

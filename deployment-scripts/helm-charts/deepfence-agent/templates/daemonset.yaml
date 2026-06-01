@@ -21,12 +21,12 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      {{- if .Values.priorityClassName }}
-      priorityClassName: {{ .Values.priorityClassName | quote }}
-      {{- end }}
       hostPID: true
       hostNetwork: true
       serviceAccountName: {{ include "deepfence-agent.serviceAccountName" . }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName | quote }} 
+      {{- end }}
       dnsPolicy: ClusterFirstWithHostNet
       volumes:
         {{- if .Values.mountContainerRuntimeSocket.dockerSock }}
@@ -89,8 +89,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "deepfence-agent.fullname" . }}-key
                   key: "deepfence-key"
-            - name: USER_DEFINED_TAGS
-              value: {{ .Values.userDefinedTags }}
+            - name: CUSTOM_TAGS
+              value: {{ .Values.customTags }}
             - name: DF_ENABLE_PROCESS_REPORT
               value: "{{ .Values.enableGraphReport }}"
             - name: DF_ENABLE_CONNECTIONS_REPORT
@@ -109,6 +109,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: http_proxy
+              value: "{{ .Values.managementConsoleProxy.http_proxy }}"
+            - name: https_proxy
+              value: "{{ .Values.managementConsoleProxy.https_proxy }}"
+            - name: no_proxy
+              value: "{{ .Values.managementConsoleProxy.no_proxy }}"
             {{- if .Values.clusterName }}
             - name: SCOPE_HOSTNAME
               value: "{{ .Values.clusterName }}-$(AGENT_HOSTNAME)"

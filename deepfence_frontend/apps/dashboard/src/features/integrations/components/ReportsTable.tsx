@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import {
   capitalize,
   intersection,
@@ -40,7 +41,7 @@ import { ScanStatusBadge } from '@/components/ScanStatusBadge';
 import { TruncatedText } from '@/components/TruncatedText';
 import { RESOURCES } from '@/features/integrations/pages/CreateReport';
 import { useGetReports } from '@/features/integrations/pages/DownloadReport';
-import { invalidateAllQueries } from '@/queries';
+import { queries } from '@/queries';
 import { formatMilliseconds } from '@/utils/date';
 
 enum ActionEnumType {
@@ -153,7 +154,10 @@ export const ReportTable = ({
       }
       if (
         nodeTypeFilter?.length &&
-        (!nodeTypeFilter.includes(filters?.node_type) || isNil(filters?.node_type))
+        (!nodeTypeFilter.some((filter) =>
+          filters?.node_type?.includes(filter as UtilsReportFiltersNodeTypeEnum),
+        ) ||
+          isNil(filters?.node_type))
       ) {
         return false;
       }
@@ -202,9 +206,10 @@ export const ReportTable = ({
       desc: true,
     },
   ]);
+  const queryClient = useQueryClient();
 
   useInterval(() => {
-    invalidateAllQueries();
+    queryClient.invalidateQueries({ queryKey: queries.integration.getReports._def });
   }, 15000);
 
   const columnHelper = createColumnHelper<ModelExportReport>();
@@ -563,13 +568,6 @@ export const ReportFilters = () => {
           scanType={'none'}
           defaultSelectedHosts={searchParams.getAll('host')}
           agentRunning={false}
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('host');
-              prev.delete('page');
-              return prev;
-            });
-          }}
           onChange={(value) => {
             setSearchParams((prev) => {
               prev.delete('host');
@@ -591,12 +589,6 @@ export const ReportFilters = () => {
               values.forEach((value) => {
                 prev.append('container', value);
               });
-              return prev;
-            });
-          }}
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('container');
               return prev;
             });
           }}

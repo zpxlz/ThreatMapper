@@ -2,11 +2,12 @@ package reports
 
 import (
 	"context"
-	"os"
-	"strconv"
-	"time"
-
 	_ "embed"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/deepfence/ThreatMapper/deepfence_utils/log"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/telemetry"
@@ -31,19 +32,19 @@ var (
 )
 
 var colors = map[string]*props.Color{
-	"alarm":    &props.Color{Red: 228, Green: 29, Blue: 75},
-	"info":     &props.Color{Red: 29, Green: 142, Blue: 230},
-	"ok":       &props.Color{Red: 21, Green: 183, Blue: 126},
-	"skip":     &props.Color{Red: 156, Green: 163, Blue: 175},
-	"pass":     &props.Color{Red: 21, Green: 183, Blue: 126},
-	"warn":     &props.Color{Red: 255, Green: 156, Blue: 50},
-	"note":     &props.Color{Red: 156, Green: 163, Blue: 175},
-	"delete":   &props.Color{Red: 224, Green: 81, Blue: 109},
-	"critical": &props.Color{Red: 245, Green: 102, Blue: 130},
-	"high":     &props.Color{Red: 255, Green: 124, Blue: 2},
-	"medium":   &props.Color{Red: 255, Green: 156, Blue: 50},
-	"low":      &props.Color{Red: 229, Green: 195, Blue: 84},
-	"":         &props.Color{Red: 156, Green: 163, Blue: 175},
+	"alarm":    {Red: 228, Green: 29, Blue: 75},
+	"info":     {Red: 29, Green: 142, Blue: 230},
+	"ok":       {Red: 21, Green: 183, Blue: 126},
+	"skip":     {Red: 156, Green: 163, Blue: 175},
+	"pass":     {Red: 21, Green: 183, Blue: 126},
+	"warn":     {Red: 255, Green: 156, Blue: 50},
+	"note":     {Red: 156, Green: 163, Blue: 175},
+	"delete":   {Red: 224, Green: 81, Blue: 109},
+	"critical": {Red: 245, Green: 102, Blue: 130},
+	"high":     {Red: 255, Green: 124, Blue: 2},
+	"medium":   {Red: 255, Green: 156, Blue: 50},
+	"low":      {Red: 229, Green: 195, Blue: 84},
+	"":         {Red: 156, Green: 163, Blue: 175},
 }
 
 func truncateText(s string, max int) string {
@@ -56,9 +57,11 @@ func truncateText(s string, max int) string {
 
 func getMarato() core.Maroto {
 	cfg := config.NewBuilder().
-		WithWorkerPoolSize(2).
-		WithPageNumber("Page {current}/{total}", props.RightBottom).
-		WithMargins(10, 15, 10).
+		WithConcurrentMode(2).
+		WithPageNumber(props.PageNumber{Pattern: "Page {current}/{total}", Place: props.RightBottom}).
+		WithTopMargin(10).
+		WithLeftMargin(15).
+		WithRightMargin(10).
 		Build()
 
 	mrt := maroto.New(cfg)
@@ -72,7 +75,12 @@ func getMarato() core.Maroto {
 	return m
 }
 
-func getFiltersPage(title, scanType, nodeType, timeRange, severity, advFilters string) core.Page {
+func getFiltersPage(title string, scanType string, nodeType []string,
+	timeRange string, severity string, advFilters string) core.Page {
+
+	if timeRange == "" {
+		timeRange = "0001-01-01T00:00:00Z - 0001-01-01T00:00:00Z"
+	}
 
 	cellStyle := &props.Cell{
 		BackgroundColor: &props.Color{Red: 255, Green: 255, Blue: 255},
@@ -102,7 +110,7 @@ func getFiltersPage(title, scanType, nodeType, timeRange, severity, advFilters s
 		),
 		row.New(6).Add(
 			text.NewCol(6, "Node Type", filtersTextProps).WithStyle(cellStyle),
-			text.NewCol(6, nodeType, filtersTextProps).WithStyle(cellStyle),
+			text.NewCol(6, strings.Join(nodeType, ","), filtersTextProps).WithStyle(cellStyle),
 		),
 		row.New(6).Add(
 			text.NewCol(6, "Time Range", filtersTextProps).WithStyle(cellStyle),
@@ -188,7 +196,7 @@ func generatePDF(ctx context.Context, params utils.ReportParams) (string, error)
 	log := log.WithCtx(ctx)
 
 	var (
-		document core.Document
+		document string
 		err      error
 	)
 
@@ -212,19 +220,22 @@ func generatePDF(ctx context.Context, params utils.ReportParams) (string, error)
 		return "", err
 	}
 
-	// create a temp file to hold pdf report
-	temp, err := os.CreateTemp("", "report-*-"+reportFileName(params))
+	return document, nil
+}
+
+func writeReportToFile(dir string, fileName string, data []byte) (string, error) {
+
+	// make sure directory exists
+	os.MkdirAll(dir, os.ModePerm)
+
+	out := filepath.Join(dir, fileName)
+
+	log.Debug().Msgf("write report to path %s", out)
+
+	err := os.WriteFile(out, data, os.ModePerm)
 	if err != nil {
 		return "", err
 	}
-	defer temp.Close()
 
-	if _, err := temp.Write(document.GetBytes()); err != nil {
-		return "", err
-	}
-
-	log.Info().Msgf("report id %s pdf generation metrics %s",
-		params.ReportID, document.GetReport())
-
-	return temp.Name(), nil
+	return out, nil
 }

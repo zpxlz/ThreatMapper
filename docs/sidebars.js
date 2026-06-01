@@ -36,7 +36,6 @@ const sidebars = {
         'architecture/threatgraph',
       ],
     },
-    'demo',
 
     {
       type: 'category',
@@ -63,6 +62,7 @@ const sidebars = {
             'console/manage-users',
             'console/database-export-import',
             'console/troubleshooting',
+            'console/air-gapped',
           ],
         },
 
@@ -170,6 +170,7 @@ const sidebars = {
         'developers/build',
         'developers/deploy-console',
         'developers/deploy-agent',
+        'developers/api-reference',
         'developers/python-sdk',
       ],
     },

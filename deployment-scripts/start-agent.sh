@@ -20,9 +20,17 @@ EOF
 
 MGMT_CONSOLE_URL=""
 MGMT_CONSOLE_PORT="443"
+# Optional - only set a value if agent needs to go via a proxy
+# Example: http://172.17.0.1:3128
+MGMT_CONSOLE_HTTP_PROXY=""
+MGMT_CONSOLE_HTTPS_PROXY=""
+NO_PROXY=""
+
 # Log level: debug / info / error
 DF_LOG_LEVEL="info"
-USER_DEFINED_TAGS=""
+# Comma separated tags
+# Example: CUSTOM_TAGS="dev,server"
+CUSTOM_TAGS=""
 DEEPFENCE_KEY=""
 DF_HOSTNAME=""
 INSTANCE_ID_SUFFIX="N"
@@ -52,7 +60,7 @@ check_options() {
       DF_HOSTNAME=$OPTARG
       ;;
     t)
-      USER_DEFINED_TAGS="$OPTARG"
+      CUSTOM_TAGS="$OPTARG"
       ;;
     i)
       if [ "$OPTARG" == "Y" ] || [ "$OPTARG" == "y" ]; then
@@ -106,14 +114,17 @@ start_agent() {
     -e DF_ENABLE_PROCESS_REPORT="true" \
     -e DF_ENABLE_CONNECTIONS_REPORT="true" \
     -e INSTANCE_ID_SUFFIX="$INSTANCE_ID_SUFFIX" \
-    -e USER_DEFINED_TAGS="$USER_DEFINED_TAGS" \
+    -e CUSTOM_TAGS="$CUSTOM_TAGS" \
     -e MGMT_CONSOLE_URL="$MGMT_CONSOLE_URL" \
     -e MGMT_CONSOLE_PORT="$MGMT_CONSOLE_PORT" \
     -e SCOPE_HOSTNAME="$DF_HOSTNAME" \
     -e DEEPFENCE_KEY="$DEEPFENCE_KEY" \
     -e DF_USE_DUMMY_SCOPE="$DF_USE_DUMMY_SCOPE" \
     -e DF_USE_FAT_DUMMY_SCOPE="$DF_USE_FAT_DUMMY_SCOPE" \
-    "$IMAGE_REPOSITORY"/deepfence_agent_ce:"${DF_IMG_TAG:-2.2.1}"
+    -e http_proxy="$MGMT_CONSOLE_HTTP_PROXY" \
+    -e https_proxy="$MGMT_CONSOLE_HTTPS_PROXY" \
+    -e no_proxy="$NO_PROXY" \
+    "$IMAGE_REPOSITORY"/deepfence_agent_ce:"${DF_IMG_TAG:-2.5.8}"
 }
 
 main() {

@@ -1,6 +1,5 @@
-FROM redis:7.2-alpine3.19
+FROM redis:8.4-alpine3.22
 
-MAINTAINER Deepfence Inc
 LABEL deepfence.role=system
 
 COPY redis.conf /usr/local/etc/redis/

@@ -33,9 +33,11 @@ import {
   ActionEnumType,
   RegistryScanType,
 } from '@/features/registries/pages/RegistryImages';
+import { getRegistryPrettyName } from '@/features/registries/utils';
 import { queries } from '@/queries';
 import {
   MalwareScanNodeTypeEnum,
+  RegistryKeyType,
   ScanTypeEnum,
   SecretScanNodeTypeEnum,
   VulnerabilityScanNodeTypeEnum,
@@ -191,7 +193,7 @@ const DynamicBreadcrumbs = () => {
             account: encodeURIComponent(account),
           })}
         >
-          {account}
+          {getRegistryPrettyName(account as RegistryKeyType)}
         </DFLink>
       </BreadcrumbLink>
       <BreadcrumbLink>
@@ -245,7 +247,6 @@ const Filters = () => {
       <div className="flex gap-2">
         <Combobox
           value={searchParams.get('vulnerabilityScanStatus')}
-          nullable
           onQueryChange={(query) => {
             setVulnerabilityScanStatusSearchText(query);
           }}
@@ -279,7 +280,6 @@ const Filters = () => {
         </Combobox>
         <Combobox
           value={searchParams.get('secretScanStatus')}
-          nullable
           onQueryChange={(query) => {
             setSecretScanStatusSearchText(query);
           }}
@@ -313,7 +313,6 @@ const Filters = () => {
         </Combobox>
         <Combobox
           value={searchParams.get('malwareScanStatus')}
-          nullable
           onQueryChange={(query) => {
             setMalwareScanStatusSearchText(query);
           }}
@@ -459,7 +458,7 @@ const RegistryImagesTagsResults = () => {
 
   const [searchParams] = useSearchParams();
 
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
 
   const onTableAction = useCallback(
     (nodeIds: string[], scanType: RegistryScanType, _: string) => {
@@ -486,6 +485,7 @@ const RegistryImagesTagsResults = () => {
             onClick={() => {
               setFiltersExpanded((prev) => !prev);
             }}
+            data-testid="filterButtonIdForTable"
           >
             Filter
           </Button>

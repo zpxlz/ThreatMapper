@@ -18,6 +18,7 @@ import {
   MalwareScanApi,
   RegistryApi,
   ReportsApi,
+  RulesApi,
   ScanResultsApi,
   SearchApi,
   SecretScanApi,
@@ -121,6 +122,10 @@ export function getComplianceApiClient() {
     resultCountComplianceScan:
       complianceApi.countResultsComplianceScan.bind(complianceApi),
     listComplianceScan: complianceApi.listComplianceScan.bind(complianceApi),
+    scanResultCloudComplianceCountsByControls:
+      complianceApi.groupResultsCloudCompliance.bind(complianceApi),
+    scanResultComplianceCountsByControls:
+      complianceApi.groupResultsCompliance.bind(complianceApi),
   };
 }
 
@@ -199,11 +204,15 @@ export function getSearchApiClient() {
     searchSecrets: searchApi.searchSecrets.bind(searchApi),
     searchSecretsCount: searchApi.countSecrets.bind(searchApi),
     searchSecretScanCount: searchApi.countSecretsScans.bind(searchApi),
+    searchSecretRules: searchApi.searchSecretRules.bind(searchApi),
+    searchSecretRulesCount: searchApi.countSecretRules.bind(searchApi),
 
     searchMalwaresScan: searchApi.searchMalwareScans.bind(searchApi),
     searchMalwares: searchApi.searchMalwares.bind(searchApi),
     searchMalwaresCount: searchApi.countMalwares.bind(searchApi),
     searchMalwareScanCount: searchApi.countMalwareScans.bind(searchApi),
+    searchMalwareRules: searchApi.searchMalwareRules.bind(searchApi),
+    searchMalwareRulesCount: searchApi.countMalwareRules.bind(searchApi),
 
     searchCompliances: searchApi.searchCompliances.bind(searchApi),
     searchCloudCompliances: searchApi.searchCloudCompliances.bind(searchApi),
@@ -273,6 +282,10 @@ export function getLookupApiClient() {
     lookupCompliances: lookupApi.getCompliances.bind(lookupApi),
     lookupCloudCompliances: lookupApi.getCloudCompliances.bind(lookupApi),
     lookupRegistryAccounts: lookupApi.getRegistryAccount.bind(lookupApi),
+    lookupComplianceControls: lookupApi.getComplianceControls.bind(lookupApi),
+    lookupVulnerabilityRules: lookupApi.getVulnerabilityRules.bind(lookupApi),
+    lookupSecretRules: lookupApi.getSecretRules.bind(lookupApi),
+    lookupMalwareRules: lookupApi.getMalwareRules.bind(lookupApi),
   };
 }
 
@@ -378,11 +391,12 @@ export function getSettingsApiClient() {
     deleteCustomScheduledTask: settingsApi.deleteCustomScheduledTask.bind(settingsApi),
     addScheduledTask: settingsApi.addScheduledTask.bind(settingsApi),
     getAgentVersions: settingsApi.getAgentVersions.bind(settingsApi),
-    generateThreatMapperLicense: settingsApi.generateLicense.bind(settingsApi),
-    registerThreatMapperLicense: settingsApi.registerLicense.bind(settingsApi),
-    getThreatMapperLicense: settingsApi.getLicense.bind(settingsApi),
-    deleteThreatMapperLicense: settingsApi.deleteLicense.bind(settingsApi),
     testUnconfiguredEmail: settingsApi.testUnconfiguredEmail.bind(settingsApi),
+    getDatabaseInfo: settingsApi.databaseInfo.bind(settingsApi),
+    getDeepfenceCommunicationMessages:
+      settingsApi.getDeepfenceCommunicationMessages.bind(settingsApi),
+    markDeepfenceCommunicationRead:
+      settingsApi.markDeepfenceCommunicationRead.bind(settingsApi),
   };
 }
 
@@ -420,5 +434,17 @@ export function getScanResultCompletionApiClient() {
       scanCompleteionApi.completeContainerInfo.bind(scanCompleteionApi),
     completeCloudResources:
       scanCompleteionApi.completeCloudResources.bind(scanCompleteionApi),
+    completeCloudAccount:
+      scanCompleteionApi.completeCloudAccount.bind(scanCompleteionApi),
+    completeKubernetesClusterInfo:
+      scanCompleteionApi.completeKubernetesClusterInfo.bind(scanCompleteionApi),
+  };
+}
+
+export function getRulesApiClient() {
+  const rulesApi = new RulesApi(configuration);
+  return {
+    maskRules: rulesApi.maskRules.bind(rulesApi),
+    unmaskRules: rulesApi.unmaskRules.bind(rulesApi),
   };
 }

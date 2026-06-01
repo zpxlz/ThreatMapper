@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
-	"strings"
+	"time"
 
+	intgerr "github.com/deepfence/ThreatMapper/deepfence_server/pkg/integration/errors"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/log"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/telemetry"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/utils"
+	"github.com/spf13/cast"
 )
 
 const BatchSize = 5
@@ -121,21 +122,106 @@ func (s Slack) FormatMessage(message []map[string]interface{}, index int) []map[
 	return blocks
 }
 
-func (s Slack) SendNotification(ctx context.Context, message string, extras map[string]interface{}) error {
+func (s Slack) FormatSummaryMessage(message []map[string]interface{}) []map[string]interface{} {
+
+	blocks := []map[string]interface{}{}
+
+	for _, m := range message {
+
+		// header
+		blocks = append(
+			blocks,
+			map[string]interface{}{
+				"type": "header",
+				"text": map[string]interface{}{
+					"type":  "plain_text",
+					"text":  fmt.Sprintf("Deepfence %s Scan", s.Resource),
+					"emoji": true,
+				},
+			},
+		)
+
+		// info section
+		startedAt := time.UnixMilli(cast.ToInt64(m["created_at"])).Format(time.RFC1123)
+		completedAt := time.UnixMilli(cast.ToInt64(m["updated_at"])).Format(time.RFC1123)
+		blocks = append(
+			blocks,
+			map[string]interface{}{
+				"type": "section",
+				"fields": []map[string]interface{}{
+					{
+						"type": "mrkdwn",
+						"text": fmt.Sprintf("*Node Type:*\n%v", m["node_type"]),
+					},
+					{
+						"type": "mrkdwn",
+						"text": fmt.Sprintf("*Node Name:*\n%v", m["node_name"]),
+					},
+					{
+						"type": "mrkdwn",
+						"text": fmt.Sprintf("*Started On:*\n %s", startedAt),
+					},
+					{
+						"type": "mrkdwn",
+						"text": fmt.Sprintf("*Completed On:*\n %s", completedAt),
+					},
+				},
+			},
+		)
+
+		// Severity section
+		var severity = ""
+		for k, v := range m["severity_counts"].(map[string]int32) {
+			severity += fmt.Sprintf(">_%s:_ %d\n", k, v)
+		}
+
+		blocks = append(
+			blocks,
+			map[string]interface{}{
+				"type": "section",
+				"fields": []map[string]interface{}{
+					{
+						"type": "mrkdwn",
+						"text": fmt.Sprintf("*%s Severity Count:*\n%s", s.Resource, severity),
+					},
+				},
+			},
+		)
+
+		// link
+		blocks = append(
+			blocks,
+			map[string]interface{}{
+				"type": "section",
+				"fields": []map[string]interface{}{
+					{
+						"type": "mrkdwn",
+						"text": fmt.Sprintf("<%v|*Click here*> to view scan results on Console",
+							m["scan_result_link"]),
+					},
+				},
+			},
+		)
+
+		// add a divider
+		blocks = append(
+			blocks,
+			map[string]interface{}{
+				"type": "divider",
+			},
+		)
+
+	}
+
+	return blocks
+}
+
+func (s Slack) SendNotification(ctx context.Context, message []map[string]interface{}, extras map[string]interface{}) error {
 
 	_, span := telemetry.NewSpan(ctx, "integrations", "slack-send-notification")
 	defer span.End()
 
-	// formatting: unmarshal into payload
-	var msg []map[string]interface{}
-
-	d := json.NewDecoder(strings.NewReader(message))
-	d.UseNumber()
-	if err := d.Decode(&msg); err != nil {
-		return err
-	}
-
-	totalMessages := len(msg)
+	totalMessages := len(message)
 	numBatches := (totalMessages + BatchSize - 1) / BatchSize
 
 	for i := 0; i < numBatches; i++ {
@@ -145,9 +231,16 @@ func (s Slack) SendNotification(ctx context.Context, message string, extras map[
 			endIdx = totalMessages
 		}
 
-		batchMsg := msg[startIdx:endIdx]
+		batchMsg := message[startIdx:endIdx]
 
-		m := s.FormatMessage(batchMsg, startIdx+1)
+		var m []map[string]interface{}
+
+		if s.SendSummaryLink() {
+			m = s.FormatSummaryMessage(batchMsg)
+		} else {
+			m = s.FormatMessage(batchMsg, startIdx+1)
+		}
+
 		payload := map[string]interface{}{
 			"blocks": m,
 		}
@@ -160,8 +253,9 @@ func (s Slack) SendNotification(ctx context.Context, message string, extras map[
 
 		// send message to this webhookURL using http
 		// Set up the HTTP request.
-		req, err := http.NewRequest("POST", s.Config.WebhookURL, bytes.NewBuffer(payloadBytes))
+		req, err := http.NewRequest(http.MethodPost, s.Config.WebhookURL, bytes.NewBuffer(payloadBytes))
 		if err != nil {
+			log.Error().Err(err).Msg("error create http request")
 			span.EndWithErr(err)
 			return err
 		}
@@ -171,8 +265,9 @@ func (s Slack) SendNotification(ctx context.Context, message string, extras map[
 		client := utils.GetHTTPClient()
 		resp, err := client.Do(req)
 		if err != nil {
+			log.Error().Err(err).Msg("error on http request")
 			span.EndWithErr(err)
-			return err
+			return intgerr.CheckHTTPError(err)
 		}
 
 		// Check the response status code.
@@ -189,7 +284,8 @@ func (s Slack) SendNotification(ctx context.Context, message string, extras map[
 				}
 			}
 			resp.Body.Close()
-			return fmt.Errorf("failed to send notification batch %d, status code: %d , error: %s", i+1, resp.StatusCode, errorMsg)
+			return fmt.Errorf("failed to send notification batch %d, status code: %d , error: %s",
+				i+1, resp.StatusCode, errorMsg)
 		}
 		resp.Body.Close()
 	}
@@ -221,7 +317,7 @@ func (s Slack) IsValidCredential(ctx context.Context) (bool, error) {
 
 	// send message to this webhookURL using http
 	// Set up the HTTP request.
-	req, err := http.NewRequest("POST", s.Config.WebhookURL, bytes.NewBuffer(payloadBytes))
+	req, err := http.NewRequest(http.MethodPost, s.Config.WebhookURL, bytes.NewBuffer(payloadBytes))
 	if err != nil {
 		log.Error().Msg(err.Error())
 		return false, err
@@ -239,9 +335,13 @@ func (s Slack) IsValidCredential(ctx context.Context) (bool, error) {
 	// Check the response status code.
 	if resp.StatusCode != http.StatusOK {
 		log.Error().Err(err).Msgf("failed to send notification, status code: %d", resp.StatusCode)
-		return false, errors.New(fmt.Sprintf("failed to send test notification, status code: %d", resp.StatusCode))
+		return false, fmt.Errorf("failed to send test notification, status code: %d", resp.StatusCode)
 	}
 	resp.Body.Close()
 
 	return true, nil
+}
+
+func (s Slack) SendSummaryLink() bool {
+	return s.Config.SendSummary
 }

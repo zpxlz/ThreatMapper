@@ -398,7 +398,7 @@ func GetPodContainerIDs(ctx context.Context, podIds []model.NodeIdentifier) ([]m
 	return res, nil
 }
 
-func GetCloudAccountIDs(ctx context.Context, cloudProviderIds []model.NodeIdentifier) ([]model.NodeIdentifier, error) {
+func GetCloudAccountIDs(ctx context.Context, cloudProviderIds []model.NodeIdentifier, filters *reporters.FieldsFilters) ([]model.NodeIdentifier, error) {
 
 	ctx, span := telemetry.NewSpan(ctx, "scan-reports", "get-cloud-account-ids")
 	defer span.End()
@@ -418,9 +418,15 @@ func GetCloudAccountIDs(ctx context.Context, cloudProviderIds []model.NodeIdenti
 	}
 	defer tx.Close(ctx)
 
+	filterClauses := mo.None[reporters.FieldsFilters]()
+	if filters != nil {
+		filterClauses = mo.Some(*filters)
+	}
+
 	nres, err := tx.Run(ctx, `
 		MATCH (n:CloudNode)
 		WHERE n.node_id IN $node_ids
+		`+reporters.ParseFieldFilters2CypherWhereConditions(`n`, filterClauses, false)+`
 		RETURN n.node_id, n.cloud_provider`,
 		map[string]interface{}{"node_ids": NodeIdentifierToIDList(cloudProviderIds)})
 	if err != nil {
@@ -432,6 +438,7 @@ func GetCloudAccountIDs(ctx context.Context, cloudProviderIds []model.NodeIdenti
 		return res, err
 	}
 	orgNodeIds := []string{}
+	childNodeIDs := []string{}
 	for _, rec := range recs {
 		cloudProvider := rec.Values[1].(string)
 		if cloudProvider == model.PostureProviderAWSOrg || cloudProvider == model.PostureProviderGCPOrg || cloudProvider == model.PostureProviderAzureOrg {
@@ -442,13 +449,16 @@ func GetCloudAccountIDs(ctx context.Context, cloudProviderIds []model.NodeIdenti
 			NodeID:   rec.Values[0].(string),
 			NodeType: controls.ResourceTypeToString(controls.CloudAccount),
 		})
+		childNodeIDs = append(childNodeIDs, rec.Values[0].(string))
 	}
 	if len(orgNodeIds) > 0 {
 		nres, err = tx.Run(ctx, `
 		MATCH (n:CloudNode) -[:IS_CHILD] -> (m)
 		WHERE n.node_id IN $node_ids
+		AND NOT m.node_id IN $child_node_ids
+		`+reporters.ParseFieldFilters2CypherWhereConditions(`m`, filterClauses, false)+`
 		RETURN m.node_id`,
-			map[string]interface{}{"node_ids": orgNodeIds})
+			map[string]interface{}{"node_ids": orgNodeIds, "child_node_ids": childNodeIDs})
 		if err != nil {
 			return res, err
 		}
@@ -510,6 +520,12 @@ func GetScansList(ctx context.Context, scanType utils.Neo4jScanType, nodeIDs []m
 	}
 	defer tx.Close(ctx)
 
+	var orderFilter string
+	if len(ff.OrderFilter.OrderFields) > 0 {
+		orderFilter = reporters.OrderFilter2CypherCondition("m", ff.OrderFilter, []string{"n"})
+	} else {
+		orderFilter = "WITH n,m ORDER BY m.updated_at"
+	}
 	var scansInfo []model.ScanInfo
 	var query string
 	var nodeIDsStr []string
@@ -525,14 +541,16 @@ func GetScansList(ctx context.Context, scanType utils.Neo4jScanType, nodeIDs []m
 			WHERE n.node_id IN $node_ids
 			AND (` + strings.Join(nodeTypesStr, " OR ") + `)
 			` + reporters.ParseFieldFilters2CypherWhereConditions("m", mo.Some(ff), false) + `
-			RETURN m.node_id, m.status, m.status_message, m.created_at, m.updated_at, n.node_id, n.node_name, labels(n) as node_type
-			ORDER BY m.updated_at ` + fw.FetchWindow2CypherQuery()
+			` + orderFilter + `
+			RETURN m.node_id, m.status, m.status_message, m.created_at, m.updated_at, n.node_id, COALESCE(n.node_name, ""), labels(n) as node_type
+			` + fw.FetchWindow2CypherQuery()
 	} else {
 		query = `
 			MATCH (m:` + string(scanType) + `) -[:SCANNED]-> (n)
 			` + reporters.ParseFieldFilters2CypherWhereConditions("m", mo.Some(ff), true) + `
-			RETURN m.node_id, m.status, m.status_message, m.created_at, m.updated_at, n.node_id, n.node_name, labels(n) as node_type
-			ORDER BY m.updated_at ` + fw.FetchWindow2CypherQuery()
+			` + orderFilter + `
+			RETURN m.node_id, m.status, m.status_message, m.created_at, m.updated_at, n.node_id, COALESCE(n.node_name, ""), labels(n) as node_type
+			` + fw.FetchWindow2CypherQuery()
 	}
 	scansInfo, err = processScansListQuery(ctx, query, nodeIDsStr, tx)
 	if err != nil {
@@ -638,8 +656,8 @@ func GetScanResultDiff[T any](ctx context.Context, scanType utils.Neo4jScanType,
 	OPTIONAL MATCH (c:ContainerImage{node_id: f.docker_image_id}) -[:ALIAS] ->(t) -[ma:MASKED]-> (d)
 	OPTIONAL MATCH (cb:ContainerImage{node_id: n.docker_image_id}) -[:IS] ->(is) -[mis:MASKED]-> (d)
 	WITH e, d, r, collect(ma) as ma_list, collect(mis) as mis_list
-	WITH apoc.map.merge( e{.*}, 
-	d{.*, masked: coalesce(d.masked or r.masked or e.masked or head(ma_list).masked or head(mis_list).masked, false), 
+	WITH apoc.map.merge( e{.*},
+	d{.*, masked: coalesce(d.masked or r.masked or e.masked or head(ma_list).masked or head(mis_list).masked, false),
 	name: coalesce(e.name, d.name, '')}) AS merged_data` +
 		reporters.ParseFieldFilters2CypherWhereConditions("d", mo.Some(ff), true) +
 		ffCondition + ` RETURN merged_data ` +
@@ -731,7 +749,7 @@ func GetScanResults[T any](ctx context.Context, scanType utils.Neo4jScanType, sc
 		WITH d, n, e, r, m
 		OPTIONAL MATCH (cb:ContainerImage{node_id: n.docker_image_id}) -[:IS] ->(is) -[mis:MASKED]-> (d)
 		WITH apoc.map.merge( e{.*},
-		d{.*, masked: coalesce(d.masked or r.masked or e.masked 
+		d{.*, masked: coalesce(d.masked or r.masked or e.masked
 			or m.masked or mis.masked, false),
 		name: coalesce(e.name, d.name, '')}) as d` +
 		reporters.ParseFieldFilters2CypherWhereConditions("d", mo.Some(ff), true) +

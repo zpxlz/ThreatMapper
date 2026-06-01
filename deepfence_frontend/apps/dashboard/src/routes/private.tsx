@@ -7,11 +7,11 @@ import { scanMalwareApiAction } from '@/components/scan-configure-forms/MalwareS
 import { scanSecretApiAction } from '@/components/scan-configure-forms/SecretScanConfigureForm';
 import { actionStopScan } from '@/components/scan-configure-forms/StopScanForm';
 import { scanVulnerabilityApiAction } from '@/components/scan-configure-forms/VulnerabilityScanConfigureForm';
-import { module as userInfoGuardModule } from '@/components/UserInfoGuard';
 import { module as logoutAction } from '@/features/auth/data-components/logoutAction';
 import { authenticatedRootLoader } from '@/features/common/data-component/authenticatedRoot/authenticatedRootLoader';
 import { action as downloadSBOMAction } from '@/features/common/data-component/downloadSBOMAction';
 import { action as downloadScanAction } from '@/features/common/data-component/downloadScanAction';
+import { action as markDfMessageReadAction } from '@/features/common/data-component/markDfMessageReadAction';
 import { registryConnectorActionApi } from '@/features/common/data-component/RegistryConnectorForm';
 import { searchCloudFiltersApiLoader } from '@/features/common/data-component/searchCloudFiltersApiLoader';
 import { RootLayout } from '@/features/common/RootLayout';
@@ -29,7 +29,6 @@ import { module as malware } from '@/features/malwares/pages/Malware';
 import { module as malwareDetails } from '@/features/malwares/pages/MalwareDetailModal';
 import { module as malwareScanResults } from '@/features/malwares/pages/MalwareScanResults';
 import { module as malwareScans } from '@/features/malwares/pages/MalwareScans';
-import { module as mostExploitableMalwares } from '@/features/malwares/pages/MostExploitableMalwares';
 import { module as uniqueMalwares } from '@/features/malwares/pages/UniqueMalwares';
 import {
   ConnectorsLayout,
@@ -60,30 +59,30 @@ import { module as registryAccounts } from '@/features/registries/pages/Registry
 import { module as registryImages } from '@/features/registries/pages/RegistryImages';
 import { module as registryImageTags } from '@/features/registries/pages/RegistryImageTags';
 import { module as secretRulesForScan } from '@/features/secrets/data-components/secretScanRulesApiLoader';
-import { module as mostExploitableSecrets } from '@/features/secrets/pages/MostExploitableSecrets';
 import { module as secret } from '@/features/secrets/pages/Secret';
 import { module as secretDetails } from '@/features/secrets/pages/SecretDetailModal';
 import { module as secretScanResults } from '@/features/secrets/pages/SecretScanResults';
 import { module as secretScans } from '@/features/secrets/pages/SecretScans';
 import { module as uniqueSecrets } from '@/features/secrets/pages/UniqueSecrets';
 import { module as connectorInstructions } from '@/features/settings/pages/ConnectorInstructions';
+import { module as postureControls } from '@/features/settings/pages/controls/Controls';
 import { module as diagnosticLogs } from '@/features/settings/pages/DiagnosticLogs';
 import { module as emailConfiguration } from '@/features/settings/pages/EmailConfiguration';
+import { module as malwareFeeds } from '@/features/settings/pages/feeds/MalwareFeeds';
+import { module as malwareRuleDetailModal } from '@/features/settings/pages/feeds/MalwareRuleDetailModal';
+import { module as secretFeeds } from '@/features/settings/pages/feeds/SecretFeeds';
+import { module as secretRuleDetailModal } from '@/features/settings/pages/feeds/SecretRuleDetailModal';
 import { module as globalSettings } from '@/features/settings/pages/GlobalSettings';
 import { module as scanHistoryAndDbManagement } from '@/features/settings/pages/ScanHistoryAndDbManagement';
 import { module as scheduledJobs } from '@/features/settings/pages/ScheduledJobs';
 import { module as settings } from '@/features/settings/pages/Settings';
-import { module as threatMapperLicenseDetailsSettings } from '@/features/settings/pages/ThreatMapperLicenseDetails';
 import { module as userAuditLogs } from '@/features/settings/pages/UserAuditLogs';
 import { module as userManagement } from '@/features/settings/pages/UserManagement';
 import { module as threatGraph } from '@/features/threat-graph/pages/ThreatGraph';
 import { module as topologyLoader } from '@/features/topology/data-components/topologyLoader';
-import { module as apiEndpoints } from '@/features/topology/pages/ApiEndpoints';
 import { module as cloudResourceTable } from '@/features/topology/pages/CloudResourceTable';
 import { module as inventory } from '@/features/topology/pages/Inventory';
-import { module as llm } from '@/features/topology/pages/LLM';
 import { module as visual } from '@/features/topology/pages/ViewType';
-import { module as mostExploitableVulnerabilities } from '@/features/vulnerabilities/pages/MostExploitableVulnerabilities';
 import { module as runtimeBom } from '@/features/vulnerabilities/pages/RuntimeBom';
 import { module as uniqueVulnerabilities } from '@/features/vulnerabilities/pages/UniqueVulnerabilities';
 import { module as vulnerability } from '@/features/vulnerabilities/pages/Vulnerability';
@@ -205,16 +204,6 @@ export const privateRoutes: CustomRouteObject[] = [
             path: 'compute/:viewType/:visualLayout',
             ...visual,
             meta: { title: 'Inventory | Cloud' },
-          },
-          {
-            path: 'api',
-            ...apiEndpoints,
-            meta: { title: 'Inventory | Api Endpoints' },
-          },
-          {
-            path: 'llm',
-            ...llm,
-            meta: { title: 'Inventory | LLM' },
           },
           {
             path: 'cloud_resource',
@@ -354,18 +343,6 @@ export const privateRoutes: CustomRouteObject[] = [
         ],
       },
       {
-        path: 'vulnerability/most-exploitable',
-        ...mostExploitableVulnerabilities,
-        meta: { title: 'Most Exploitable Vulnerabilities' },
-        children: [
-          {
-            path: ':cveId',
-            ...vulnerabilityDetails,
-            meta: { title: 'Most Exploitable Vulnerability Details' },
-          },
-        ],
-      },
-      {
         path: 'vulnerability/unique-vulnerabilities',
         ...uniqueVulnerabilities,
         meta: { title: 'Unique Vulnerabilities' },
@@ -418,18 +395,6 @@ export const privateRoutes: CustomRouteObject[] = [
           },
         ],
       },
-      {
-        path: 'secret/most-exploitable',
-        ...mostExploitableSecrets,
-        meta: { title: 'Most Exploitable Secrets' },
-        children: [
-          {
-            path: ':secretId',
-            ...secretDetails,
-            meta: { title: 'Most Exploitable Secret Details' },
-          },
-        ],
-      },
       // malware
       {
         path: 'malware',
@@ -462,18 +427,6 @@ export const privateRoutes: CustomRouteObject[] = [
             path: ':malwareId',
             ...malwareDetails,
             meta: { title: 'Unique Malware Details' },
-          },
-        ],
-      },
-      {
-        path: 'malware/most-exploitable',
-        ...mostExploitableMalwares,
-        meta: { title: 'Most Exploitable Malwares' },
-        children: [
-          {
-            path: ':malwareId',
-            ...malwareDetails,
-            meta: { title: 'Most Exploitable Malware Details' },
           },
         ],
       },
@@ -547,7 +500,7 @@ export const privateRoutes: CustomRouteObject[] = [
           {
             path: 'scan-history-and-db-management',
             ...scanHistoryAndDbManagement,
-            meta: { title: 'Scan History & Database Management' },
+            meta: { title: 'Scan History & Threat intel' },
           },
           {
             path: 'scheduled-jobs',
@@ -579,9 +532,33 @@ export const privateRoutes: CustomRouteObject[] = [
             ...connectorInstructions,
           },
           {
-            path: 'tm-license-details',
-            ...threatMapperLicenseDetailsSettings,
-            meta: { title: 'License Details' },
+            path: 'feeds/secret',
+            ...secretFeeds,
+            meta: { title: 'Secret rules management' },
+            children: [
+              {
+                path: ':ruleId',
+                ...secretRuleDetailModal,
+                meta: { title: 'Secret rule' },
+              },
+            ],
+          },
+          {
+            path: 'feeds/malware',
+            ...malwareFeeds,
+            meta: { title: 'Malware rules management' },
+            children: [
+              {
+                path: ':ruleId',
+                ...malwareRuleDetailModal,
+                meta: { title: 'Malware rule' },
+              },
+            ],
+          },
+          {
+            path: 'posture/controls/:nodeType',
+            ...postureControls,
+            meta: { title: 'Posture controls management' },
           },
         ],
       },
@@ -655,8 +632,8 @@ export const privateRoutes: CustomRouteObject[] = [
         ...malwareClassesForScan,
       },
       {
-        path: 'user-info-guard',
-        ...userInfoGuardModule,
+        path: 'mark-df-message-read',
+        action: markDfMessageReadAction,
       },
     ],
   },

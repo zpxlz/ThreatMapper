@@ -23,10 +23,11 @@ const ThreatGraph = () => {
     cloudId: string;
   }>();
   const { mode } = useTheme();
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
-
+  const [isFilterOpen, setIsFilterOpen] = useState(true);
   return (
-    <div className="h-full flex flex-col">
+    <div
+      className="flex flex-col h-full"
+    >
       <ThreatGraphHeader setIsFilterOpen={setIsFilterOpen} />
       <div
         className="flex-1 flex flex-col"
@@ -136,7 +137,7 @@ const FILTER_SEARCHPARAMS: Record<
   type: { label: 'Threat', possibleValues: THREAT_TYPES },
   cloud_resource_only: { label: 'Scope', possibleValues: THREAT_GRAPH_SCOPE },
   aws_account_ids: { label: 'AWS account' },
-  gcp_account_ids: { label: 'GCP account' },
+  gcp_account_ids: { label: 'GCP project' },
   azure_account_ids: { label: 'Azure subscription' },
 };
 
@@ -153,13 +154,12 @@ const Filters = () => {
   const appliedFilterCount = getAppliedFiltersCount(searchParams);
 
   return (
-    <FilterWrapper className="mt-[6px] mx-4 pt-4 px-4 pb-3">
+    <FilterWrapper className="mt-[6px] mx-4 pt-4 px-4 pb-3 overflow-visible">
       <div className="flex gap-2">
         <Combobox
           value={THREAT_TYPES.find((threatType) => {
             return threatType.value === searchParams.get('type');
           })}
-          nullable
           onQueryChange={(query) => {
             setThreatTypeSearchText(query);
           }}
@@ -190,7 +190,6 @@ const Filters = () => {
           value={THREAT_GRAPH_SCOPE.find((scope) => {
             return scope.value === searchParams.get('cloud_resource_only');
           })}
-          nullable
           onQueryChange={(query) => {
             setScopeSearchText(query);
           }}
@@ -279,7 +278,7 @@ const Filters = () => {
         />
       </div>
       {appliedFilterCount > 0 ? (
-        <div className="flex gap-2.5 my-4 flex-wrap items-center">
+        <div className="flex gap-2.5 mt-4 flex-wrap items-center">
           {Array.from(searchParams)
             .filter(([key]) => {
               return Object.keys(FILTER_SEARCHPARAMS).includes(key);

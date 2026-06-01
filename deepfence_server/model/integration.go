@@ -27,12 +27,14 @@ type IntegrationAddReq struct {
 	IntegrationType  string                 `json:"integration_type" required:"true"`
 	NotificationType string                 `json:"notification_type" required:"true"`
 	Filters          IntegrationFilters     `json:"filters"`
+	SendSummary      bool                   `json:"send_summary"`
 }
 
 type IntegrationFilters struct {
 	FieldsFilters  reporters.FieldsFilters `json:"fields_filters"`
 	NodeIds        []NodeIdentifier        `json:"node_ids" required:"true"`
 	ContainerNames []string                `json:"container_names" required:"false"`
+	CloudProvider  string                  `json:"cloud_provider" required:"false"`
 }
 
 func (i *IntegrationAddReq) IntegrationExists(ctx context.Context, pgClient *postgresqlDb.Queries) (bool, error) {
@@ -157,6 +159,7 @@ type IntegrationUpdateReq struct {
 	NotificationType string                 `json:"notification_type"`
 	Filters          IntegrationFilters     `json:"filters"`
 	IntegrationID    string                 `path:"integration_id" validate:"required" required:"true"`
+	SendSummary      bool                   `json:"send_summary"`
 }
 
 func (i *IntegrationUpdateReq) UpdateIntegration(ctx context.Context, pgClient *postgresqlDb.Queries, integration postgresqlDb.Integration) error {

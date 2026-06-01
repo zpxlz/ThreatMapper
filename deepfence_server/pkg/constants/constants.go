@@ -43,6 +43,11 @@ const (
 	SumoLogic       = "sumologic"
 )
 
+var IntegrationTypes = []string{
+	Slack, HTTP, Teams, Splunk, S3, PagerDuty, ElasticSearch,
+	GoogleChronicle, AwsSecurityHub, Email, Jira, SumoLogic,
+}
+
 const (
 	PasswordFieldKey       = "password"
 	WebhookURLFieldKey     = "webhook_url"
@@ -54,7 +59,7 @@ const (
 	ServiceKeyFieldKey     = "service_key"
 	TokenFieldKey          = "token"
 
-	DeepfenceCommunityEmailID = "community@deepfence.io"
+	DeepfenceCommunityEmailID = "community@threatmapper.org"
 )
 
 var SensitiveFields = map[string]struct{}{

@@ -322,8 +322,7 @@ func getGenericDirectNodeReport[T reporters.Cypherable](ctx context.Context, fil
 		        OPTIONAL MATCH (l) -[:DETECTED]-> (n)
 		        OPTIONAL MATCH (l) -[:SCANNED]-> (k)
 				WITH distinct k
-				WHERE k.active=true
-		        RETURN collect(coalesce(k.node_id, '') + '##' + coalesce(k.node_name, '') + '##' + coalesce(k.node_type, '')) as resources
+		        RETURN collect(coalesce(k.node_id, '') + '##' + coalesce(k.node_name, '') + '##' + coalesce(k.node_type, '') + '##' + coalesce(k.active, '')) as resources
 			}
 			RETURN ` + reporters.FieldFilterCypher("n", filter.InFieldFilter) + `, e, resources`
 	} else {
@@ -336,15 +335,14 @@ func getGenericDirectNodeReport[T reporters.Cypherable](ctx context.Context, fil
 		        OPTIONAL MATCH (l) -[:DETECTED]-> (n)
 		        OPTIONAL MATCH (l) -[:SCANNED]-> (k)
 				WITH distinct k
-				WHERE k.active=true
-		        RETURN collect(coalesce(k.node_id, '') + '##' + coalesce(k.node_name, '') + '##' + coalesce(k.node_type, '')) as resources
+		        RETURN collect(coalesce(k.node_id, '') + '##' + coalesce(k.node_name, '') + '##' + coalesce(k.node_type, '') + '##' + coalesce(k.active, '')) as resources
 			}
 			RETURN ` + reporters.FieldFilterCypher("n", filter.InFieldFilter) + `, e, resources`
 	}
-	log.Debug().Msgf("query: %s", query)
-	r, err = tx.Run(ctx, query,
-		map[string]interface{}{"ids": filter.NodeIds})
 
+	log.Debug().Msgf("query: %s", query)
+
+	r, err = tx.Run(ctx, query, map[string]interface{}{"ids": filter.NodeIds})
 	if err != nil {
 		return res, err
 	}
@@ -391,17 +389,98 @@ func getGenericDirectNodeReport[T reporters.Cypherable](ctx context.Context, fil
 			resourceListString := make([]model.BasicNode, len(resourceList))
 			for i, v := range resourceList {
 				nodeDetails := strings.Split(v.(string), nodeReportResourcesSplit)
-				if len(nodeDetails) != 3 {
+				if len(nodeDetails) != 4 {
 					continue
 				}
 				resourceListString[i] = model.BasicNode{
 					NodeID:   nodeDetails[0],
 					Name:     nodeDetails[1],
 					NodeType: nodeDetails[2],
+					Active:   nodeDetails[3] == "true",
 				}
 			}
 			nodeMap["resources"] = resourceListString
 		}
+		var node T
+		utils.FromMap(nodeMap, &node)
+		res = append(res, node)
+	}
+
+	return res, nil
+}
+
+// whereIDLabel is not used if nodeID's in filter are not present
+func getGenericNodeReport[T reporters.Cypherable](ctx context.Context, whereIDLabel string, filter LookupFilter) ([]T, error) {
+
+	ctx, span := telemetry.NewSpan(ctx, "lookup", "get-generic-node-report")
+	defer span.End()
+
+	res := []T{}
+	var dummy T
+
+	driver, err := directory.Neo4jClient(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
+	defer session.Close(ctx)
+
+	tx, err := session.BeginTransaction(ctx, neo4j.WithTxTimeout(30*time.Second))
+	if err != nil {
+		return res, err
+	}
+	defer tx.Close(ctx)
+
+	var r neo4j.ResultWithContext
+	var query string
+	if len(filter.NodeIds) == 0 {
+		query = `
+			MATCH (n:` + dummy.NodeType() + `)
+			RETURN ` + reporters.FieldFilterCypher("n", filter.InFieldFilter) +
+			filter.Window.FetchWindow2CypherQuery()
+	} else {
+		query = `
+			MATCH (n:` + dummy.NodeType() + `)
+			WHERE n.` + whereIDLabel + ` IN $ids
+			RETURN ` + reporters.FieldFilterCypher("n", filter.InFieldFilter) +
+			filter.Window.FetchWindow2CypherQuery()
+	}
+
+	log.Debug().Msgf("query: %s", query)
+
+	r, err = tx.Run(ctx, query, map[string]interface{}{"ids": filter.NodeIds})
+	if err != nil {
+		return res, err
+	}
+
+	recs, err := r.Collect(ctx)
+
+	if err != nil {
+		return res, err
+	}
+
+	for _, rec := range recs {
+		var nodeMap map[string]interface{}
+		if len(filter.InFieldFilter) == 0 {
+			data, has := rec.Get("n")
+			if !has {
+				log.Warn().Msgf("Missing neo4j entry")
+				continue
+			}
+			da, ok := data.(dbtype.Node)
+			if !ok {
+				log.Warn().Msgf("Missing neo4j entry")
+				continue
+			}
+			nodeMap = da.Props
+		} else {
+			nodeMap = map[string]interface{}{}
+			for i := range filter.InFieldFilter {
+				nodeMap[filter.InFieldFilter[i]] = rec.Values[i]
+			}
+		}
+
 		var node T
 		utils.FromMap(nodeMap, &node)
 		res = append(res, node)
@@ -625,4 +704,137 @@ func GetComplianceReport(ctx context.Context, filter LookupFilter) ([]model.Comp
 
 func GetCloudComplianceReport(ctx context.Context, filter LookupFilter) ([]model.CloudCompliance, error) {
 	return getGenericDirectNodeReport[model.CloudCompliance](ctx, filter)
+}
+
+func GetCloudComplianceControl(ctx context.Context, filter LookupFilter) ([]model.CloudComplianceControl, error) {
+	return getGenericNodeReport[model.CloudComplianceControl](ctx, "control_id", filter)
+}
+
+func GetMalwareRulesReport(ctx context.Context, filter LookupFilter) ([]model.MalwareRule, error) {
+	rules, err := getGenericDirectRuleReport[model.MalwareRule](ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+func GetSecretRulesReport(ctx context.Context, filter LookupFilter) ([]model.SecretRule, error) {
+	rules, err := getGenericDirectRuleReport[model.SecretRule](ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+func GetVulnerabilityRulesReport(ctx context.Context, filter LookupFilter) ([]model.VulnerabilityRule, error) {
+	rules, err := getGenericDirectRuleReport[model.VulnerabilityRule](ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return rules, nil
+}
+
+func getGenericDirectRuleReport[T reporters.Cypherable](ctx context.Context, filter LookupFilter) ([]T, error) {
+
+	ctx, span := telemetry.NewSpan(ctx, "lookup", "get-generic-direct-rule-report")
+	defer span.End()
+
+	res := []T{}
+	var dummy T
+
+	driver, err := directory.Neo4jClient(ctx)
+	if err != nil {
+		return res, err
+	}
+
+	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
+	defer session.Close(ctx)
+
+	tx, err := session.BeginTransaction(ctx, neo4j.WithTxTimeout(30*time.Second))
+	if err != nil {
+		return res, err
+	}
+	defer tx.Close(ctx)
+
+	var r neo4j.ResultWithContext
+	query := `
+	MATCH (n:` + dummy.NodeType() + `)
+	WHERE n.rule_id IN $ids
+	OPTIONAL MATCH (n) -[:IS]-> (e)
+	CALL {
+	WITH n
+	OPTIONAL MATCH (l) -[:DETECTED]-> (n)
+	OPTIONAL MATCH (l) -[:SCANNED]-> (k)
+	WITH distinct k
+	WHERE k.active=true
+	RETURN collect(coalesce(k.node_id, '') + '##' + coalesce(k.node_name, '') + '##' + coalesce(k.node_type, '')) as resources
+	}
+	RETURN ` + reporters.FieldFilterCypher("n", filter.InFieldFilter) + `, e, resources`
+
+	log.Debug().Msgf("query: %s", query)
+
+	r, err = tx.Run(ctx, query, map[string]interface{}{"ids": filter.NodeIds})
+	if err != nil {
+		return res, err
+	}
+
+	recs, err := r.Collect(ctx)
+
+	if err != nil {
+		return res, err
+	}
+
+	for _, rec := range recs {
+		var nodeMap map[string]interface{}
+		if len(filter.InFieldFilter) == 0 {
+			data, has := rec.Get("n")
+			if !has {
+				log.Warn().Msgf("Missing neo4j entry")
+				continue
+			}
+			da, ok := data.(dbtype.Node)
+			if !ok {
+				log.Warn().Msgf("Missing neo4j entry")
+				continue
+			}
+			nodeMap = da.Props
+		} else {
+			nodeMap = map[string]interface{}{}
+			for i := range filter.InFieldFilter {
+				nodeMap[filter.InFieldFilter[i]] = rec.Values[i]
+			}
+		}
+		isNode, _ := rec.Get("e")
+		if isNode != nil {
+			for k, v := range isNode.(dbtype.Node).Props {
+				if k != "node_id" {
+					nodeMap[k] = v
+				} else {
+					nodeMap[dummy.ExtendedField()] = v
+				}
+			}
+		}
+		resources, isValue := rec.Get("resources")
+		if isValue {
+			resourceList := resources.([]interface{})
+			resourceListString := make([]model.BasicNode, len(resourceList))
+			for i, v := range resourceList {
+				nodeDetails := strings.Split(v.(string), nodeReportResourcesSplit)
+				if len(nodeDetails) != 3 {
+					continue
+				}
+				resourceListString[i] = model.BasicNode{
+					NodeID:   nodeDetails[0],
+					Name:     nodeDetails[1],
+					NodeType: nodeDetails[2],
+				}
+			}
+			nodeMap["resources"] = resourceListString
+		}
+		var node T
+		utils.FromMap(nodeMap, &node)
+		res = append(res, node)
+	}
+
+	return res, nil
 }

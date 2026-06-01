@@ -58,7 +58,8 @@ import { FilterIcon } from '@/components/icons/common/Filter';
 import { TimesIcon } from '@/components/icons/common/Times';
 import { TrashLineIcon } from '@/components/icons/common/TrashLine';
 import { StopScanForm } from '@/components/scan-configure-forms/StopScanForm';
-import { ScanHistoryDropdown } from '@/components/scan-history/HistoryList';
+import { HistoryControlsSkeleton } from '@/components/scan-history/HistoryControlsSkeleton';
+import { ScanHistoryDropdown } from '@/components/scan-history/ScanHistoryDropdown';
 import { ScanStatusBadge } from '@/components/ScanStatusBadge';
 import {
   ScanStatusDeletePending,
@@ -80,6 +81,7 @@ import { SecretScanResultsPieChart } from '@/features/secrets/components/scan-re
 import { SecretsCompare } from '@/features/secrets/components/scan-results/SecretsCompare';
 import { SuccessModalContent } from '@/features/settings/components/SuccessModalContent';
 import { invalidateAllQueries, queries } from '@/queries';
+import { queryClient } from '@/queries/client';
 import { THEME_LIGHT, useTheme } from '@/theme/ThemeContext';
 import {
   isCriticalSeverity,
@@ -93,7 +95,13 @@ import {
 import { get403Message, getResponseErrors } from '@/utils/403';
 import { apiWrapper } from '@/utils/api';
 import { formatMilliseconds } from '@/utils/date';
-import { SeverityEnum, SeverityEnumList } from '@/utils/enum';
+import {
+  getMaskedUnmaskedPrettyName,
+  getSeverityPrettyName,
+  SeverityEnum,
+  SeverityEnumList,
+  SeverityValueType,
+} from '@/utils/enum';
 import { abbreviateNumber } from '@/utils/number';
 import {
   isScanComplete,
@@ -120,11 +128,18 @@ enum ActionEnumType {
 
 const DEFAULT_PAGE_SIZE = 10;
 
-type ActionData = {
-  action: ActionEnumType;
-  success: boolean;
-  message?: string;
-};
+type ActionData =
+  | {
+      action: Exclude<ActionEnumType, ActionEnumType.DELETE_SCAN>;
+      success: boolean;
+      message?: string;
+    }
+  | {
+      action: ActionEnumType.DELETE_SCAN;
+      success: boolean;
+      nextScanId: string | null;
+      message?: string;
+    };
 
 const action = async ({
   params: { scanId = '' },
@@ -266,13 +281,33 @@ const action = async ({
         return {
           action: actionType,
           success: false,
+          nextScanId: null,
           message,
         };
       }
       throw result.error;
     }
+    await queryClient.resetQueries({
+      queryKey: queries.common.scanHistories._def,
+    });
+
+    const historyData = await queryClient.ensureQueryData({
+      ...queries.common.scanHistories({
+        nodeId: formData.get('nodeId') as string,
+        nodeType: formData.get('nodeType') as string,
+        scanType: ScanTypeEnum.SecretScan,
+        size: 1,
+      }),
+    });
+
+    let nextScanId: string | null = null;
+    if ('data' in historyData && historyData.data.length) {
+      nextScanId = historyData.data[0].scanId;
+    }
+
     return {
       action: actionType,
+      nextScanId,
       success: true,
     };
   } else {
@@ -283,6 +318,22 @@ const action = async ({
 const FILTER_SEARCHPARAMS: Record<string, string> = {
   visibility: 'Masked/Unmasked',
   severity: 'Severity',
+};
+const getPrettyNameForAppliedFilters = ({
+  key,
+  value,
+}: {
+  key: string;
+  value: string;
+}) => {
+  switch (key) {
+    case 'severity':
+      return getSeverityPrettyName(value as SeverityValueType);
+    case 'visibility':
+      return getMaskedUnmaskedPrettyName(value);
+    default:
+      return value;
+  }
 };
 const getAppliedFiltersCount = (searchParams: URLSearchParams) => {
   return Object.keys(FILTER_SEARCHPARAMS).reduce((prev, curr) => {
@@ -421,17 +472,35 @@ const DeleteScanConfirmationModal = ({
   open,
   onOpenChange,
   scanId,
+  nodeId,
+  nodeType,
 }: {
   scanId: string;
   open: boolean;
-  onOpenChange: (open: boolean, deleteSuccessful: boolean) => void;
+  onOpenChange: (
+    open: boolean,
+    status: {
+      success: boolean;
+      nextScanId: string | null;
+    },
+  ) => void;
+  nodeId: string;
+  nodeType: string;
 }) => {
-  const [deleteSuccessful, setDeleteSuccessful] = useState(false);
+  const [deleteStatus, setDeleteStatus] = useState<{
+    success: boolean;
+    nextScanId: string | null;
+  }>({
+    success: false,
+    nextScanId: null,
+  });
   const fetcher = useFetcher<ActionData>();
   const onDeleteScan = () => {
     const formData = new FormData();
     formData.append('actionType', ActionEnumType.DELETE_SCAN);
     formData.append('scanId', scanId);
+    formData.append('nodeId', nodeId);
+    formData.append('nodeType', nodeType);
     fetcher.submit(formData, {
       method: 'post',
     });
@@ -439,7 +508,12 @@ const DeleteScanConfirmationModal = ({
 
   useEffect(() => {
     if (fetcher.data?.success) {
-      setDeleteSuccessful(true);
+      if (fetcher.data.action === ActionEnumType.DELETE_SCAN) {
+        setDeleteStatus({
+          success: true,
+          nextScanId: fetcher.data.nextScanId,
+        });
+      }
     }
   }, [fetcher]);
 
@@ -447,7 +521,7 @@ const DeleteScanConfirmationModal = ({
     <Modal
       open={open}
       onOpenChange={(open) => {
-        onOpenChange(open, deleteSuccessful);
+        onOpenChange(open, deleteStatus);
       }}
       size="s"
       title={
@@ -465,7 +539,7 @@ const DeleteScanConfirmationModal = ({
           <div className={'flex gap-x-4 justify-end'}>
             <Button
               size="md"
-              onClick={() => onOpenChange(false, deleteSuccessful)}
+              onClick={() => onOpenChange(false, deleteStatus)}
               type="button"
               variant="outline"
             >
@@ -596,11 +670,7 @@ const ScanHistory = () => {
       <span className="pl-2 pr-3 text-t3 text-text-text-and-icon uppercase">
         scan time
       </span>
-      <Suspense
-        fallback={
-          <div className="text-text-text-and-icon text-p9">Fetching scan history...</div>
-        }
-      >
+      <Suspense fallback={<HistoryControlsSkeleton />}>
         <HistoryControls />
       </Suspense>
     </div>
@@ -622,32 +692,18 @@ const HistoryControls = () => {
 
   const [scanIdToDelete, setScanIdToDelete] = useState<string | null>(null);
 
-  const [compareInput, setCompareInput] = useState<{
-    baseScanId: string;
-    toScanId: string;
-    baseScanTime: number;
-    toScanTime: number;
-    showScanTimeModal: boolean;
-  }>({
-    baseScanId: '',
-    toScanId: '',
-    baseScanTime: created_at ?? 0,
-    toScanTime: 0,
-    showScanTimeModal: false,
-  });
+  const [compareBaseScanInfo, setCompareBaseScanInfo] = useState<{
+    scanId: string;
+    createdAt: number;
+  } | null>(null);
 
-  const { data: historyData, refetch } = useSuspenseQuery({
-    ...queries.common.scanHistories({
-      nodeId: node_id ?? '',
-      nodeType: node_type ?? '',
-      size: Number.MAX_SAFE_INTEGER,
-      scanType: ScanTypeEnum.SecretScan,
-    }),
-  });
+  const [compareToScanInfo, setCompareToScanInfo] = useState<{
+    scanId: string;
+    createdAt: number;
+  } | null>(null);
 
-  useEffect(() => {
-    refetch();
-  }, [scan_id]);
+  const [showCompareToScanSelectionModal, setShowCompareToScanSelectionModal] =
+    useState(false);
 
   if (!scan_id || !node_id || !node_type) {
     throw new Error('Scan Type, Node Type and Node Id are required');
@@ -655,13 +711,6 @@ const HistoryControls = () => {
   if (!created_at) {
     return null;
   }
-  const onCompareScanClick = (baseScanTime: number) => {
-    setCompareInput({
-      ...compareInput,
-      baseScanTime,
-      showScanTimeModal: true,
-    });
-  };
 
   return (
     <div className="flex items-center relative flex-grow gap-4">
@@ -673,89 +722,104 @@ const HistoryControls = () => {
           scanType={ScanTypeEnum.SecretScan}
         />
       )}
-      {compareInput.showScanTimeModal && (
+      {showCompareToScanSelectionModal && (
         <CompareScanInputModal
-          showDialog={true}
-          setShowDialog={() => {
-            setCompareInput((input) => {
-              return {
-                ...input,
-                showScanTimeModal: false,
-              };
-            });
+          showDialog={showCompareToScanSelectionModal}
+          setShowDialog={(open, compareToScanInfo) => {
+            if (!open) {
+              if (compareToScanInfo) {
+                setCompareToScanInfo(compareToScanInfo);
+                setShowScanCompareModal(true);
+              } else {
+                setCompareBaseScanInfo(null);
+                setCompareToScanInfo(null);
+              }
+              setShowCompareToScanSelectionModal(false);
+            }
           }}
-          setShowScanCompareModal={setShowScanCompareModal}
-          scanHistoryData={historyData.data}
-          setCompareInput={setCompareInput}
-          compareInput={compareInput}
           nodeId={node_id}
           nodeType={node_type}
           scanType={ScanTypeEnum.SecretScan}
+          baseScanInfo={compareBaseScanInfo!}
         />
       )}
       {showScanCompareModal && (
         <SecretsCompare
           open={showScanCompareModal}
           onOpenChange={setShowScanCompareModal}
-          compareInput={compareInput}
+          compareInput={{
+            baseScanId: compareBaseScanInfo?.scanId ?? '',
+            baseScanTime: compareBaseScanInfo?.createdAt ?? 0,
+            toScanId: compareToScanInfo?.scanId ?? '',
+            toScanTime: compareToScanInfo?.createdAt ?? 0,
+          }}
         />
       )}
       <div className="flex items-center gap-x-3">
         <ScanHistoryDropdown
-          scans={[...(historyData?.data ?? [])].reverse().map((item) => ({
-            id: item.scanId,
-            isCurrent: item.scanId === scan_id,
-            status: item.status,
-            timestamp: item.createdAt,
-            showScanCompareButton: true,
-            onScanTimeCompareButtonClick: onCompareScanClick,
-            onDeleteClick: (id) => {
-              setScanIdToDelete(id);
-            },
-            onDownloadClick: () => {
-              downloadScan({
-                scanId: item.scanId,
-                scanType: UtilsReportFiltersScanTypeEnum.Secret,
-                nodeType: node_type as UtilsReportFiltersNodeTypeEnum,
-              });
-            },
-            onScanClick: () => {
-              navigate(
-                generatePath('/secret/scan-results/:scanId', {
-                  scanId: encodeURIComponent(item.scanId),
-                }),
-                {
-                  replace: true,
-                },
-              );
-            },
-          }))}
-          currentTimeStamp={formatMilliseconds(created_at)}
+          selectedScan={{
+            id: scan_id,
+            status: scanStatusResult?.status ?? '',
+            timestamp: scanStatusResult?.created_at ?? 0,
+          }}
+          nodeInfo={{
+            nodeId: node_id,
+            nodeType: node_type,
+            scanType: ScanTypeEnum.SecretScan,
+          }}
+          onScanDownloadClick={(scanId) => {
+            downloadScan({
+              scanId: scanId,
+              scanType: UtilsReportFiltersScanTypeEnum.Secret,
+              nodeType: node_type as UtilsReportFiltersNodeTypeEnum,
+            });
+          }}
+          onScanClick={(scanId) => {
+            navigate(
+              generatePath('/secret/scan-results/:scanId', {
+                scanId: encodeURIComponent(scanId),
+              }),
+              {
+                replace: true,
+              },
+            );
+          }}
+          onScanDeleteClick={(scanId) => {
+            setScanIdToDelete(scanId);
+          }}
+          onScanCompareClick={({ scanId, createdAt }) => {
+            setCompareBaseScanInfo({
+              scanId,
+              createdAt,
+            });
+            setShowCompareToScanSelectionModal(true);
+          }}
         />
 
         {scanIdToDelete && (
           <DeleteScanConfirmationModal
             scanId={scanIdToDelete}
+            nodeId={node_id}
+            nodeType={node_type}
             open={!!scanIdToDelete}
-            onOpenChange={(open, deleteSuccessful) => {
-              if (!open) {
-                if (deleteSuccessful && scanIdToDelete === scan_id) {
-                  const latestScan = [...historyData.data].reverse().find((scan) => {
-                    return scan.scanId !== scanIdToDelete;
-                  });
-                  if (latestScan) {
-                    navigate(
-                      generatePath('/secret/scan-results/:scanId', {
-                        scanId: encodeURIComponent(latestScan.scanId),
-                      }),
-                      { replace: true },
-                    );
-                  } else {
-                    goBack();
-                  }
+            onOpenChange={(open, status) => {
+              if (open) return;
+              if (status.success && scanIdToDelete === scan_id) {
+                // if deleting current scan Id
+                if (status.nextScanId) {
+                  navigate(
+                    generatePath('/secret/scan-results/:scanId', {
+                      scanId: encodeURIComponent(status.nextScanId),
+                    }),
+                    {
+                      replace: true,
+                    },
+                  );
+                } else {
+                  goBack();
                 }
-                setScanIdToDelete(null);
               }
+              setScanIdToDelete(null);
             }}
           />
         )}
@@ -808,11 +872,11 @@ const HistoryControls = () => {
                     }
                     disabled={fetchStatus !== 'idle'}
                     onClick={() => {
-                      setCompareInput({
-                        ...compareInput,
-                        baseScanTime: created_at ?? 0,
-                        showScanTimeModal: true,
+                      setCompareBaseScanInfo({
+                        scanId: scan_id,
+                        createdAt: created_at,
                       });
+                      setShowCompareToScanSelectionModal(true);
                     }}
                   >
                     Compare scan
@@ -1320,7 +1384,7 @@ const Filters = () => {
                       return prev;
                     });
                   }}
-                  text={`${FILTER_SEARCHPARAMS[key]}: ${value}`}
+                  text={`${FILTER_SEARCHPARAMS[key]}: ${getPrettyNameForAppliedFilters({ key, value })}`}
                 />
               );
             })}
@@ -1459,27 +1523,27 @@ const SecretTable = ({
             <div className="w-4 h-4 shrink-0 text-text-text-and-icon">
               <SecretsIcon />
             </div>
-            <TruncatedText text={info.row.original.name ?? info.getValue() ?? ''} />
+            <TruncatedText text={info.row.original.rule_id ?? info.getValue() ?? ''} />
           </DFLink>
         ),
-        header: () => 'Name',
-        minSize: 80,
-        size: 100,
-        maxSize: 130,
+        header: () => 'Rule ID',
+        minSize: 100,
+        size: 120,
+        maxSize: 150,
       }),
       columnHelper.accessor('full_filename', {
         cell: (info) => <TruncatedText text={info.getValue()} />,
         header: () => <TruncatedText text="File name" />,
         minSize: 100,
-        size: 110,
+        size: 120,
         maxSize: 140,
       }),
       columnHelper.accessor('matched_content', {
         cell: (info) => <TruncatedText text={info.getValue()} />,
         header: () => 'Matched content',
         minSize: 130,
-        size: 140,
-        maxSize: 165,
+        size: 150,
+        maxSize: 170,
       }),
       columnHelper.accessor('level', {
         cell: (info) => (
@@ -1492,39 +1556,9 @@ const SecretTable = ({
           </div>
         ),
         header: () => 'Severity',
-        minSize: 30,
-        size: 50,
-        maxSize: 70,
-      }),
-      columnHelper.accessor('signature_to_match', {
-        enableSorting: false,
-        cell: (info) => {
-          return <TruncatedText text={info.getValue()} />;
-        },
-        header: () => <TruncatedText text="Signature to match" />,
-        minSize: 70,
-        size: 100,
-        maxSize: 150,
-      }),
-      columnHelper.accessor('resources', {
-        enableSorting: false,
-        enableResizing: true,
-        cell: (info) => {
-          return <TruncatedText text={info.getValue()?.join(', ') ?? ''} />;
-        },
-        header: () => <TruncatedText text="Affected resources" />,
-        minSize: 100,
-        size: 120,
-        maxSize: 190,
-      }),
-      columnHelper.accessor('part', {
-        enableSorting: false,
-        enableResizing: true,
-        cell: (info) => <TruncatedText text={info.getValue() || '-'} />,
-        header: () => <TruncatedText text="Part" />,
-        minSize: 40,
-        size: 50,
-        maxSize: 70,
+        minSize: 60,
+        size: 80,
+        maxSize: 100,
       }),
     ];
 
@@ -1685,7 +1719,7 @@ const ScanResults = () => {
   const [rowSelectionState, setRowSelectionState] = useState<RowSelectionState>({});
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [idsToDelete, setIdsToDelete] = useState<string[]>([]);
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
   const fetcher = useFetcher<ActionData>();
 
   const onTableAction = useCallback(
@@ -1734,6 +1768,7 @@ const ScanResults = () => {
             onClick={() => {
               setFiltersExpanded((prev) => !prev);
             }}
+            data-testid="filterButtonIdForTable"
           >
             Filter
           </Button>
@@ -1965,7 +2000,7 @@ const Top5Widget = () => {
                       className="flex items-center min-w-0"
                     >
                       <div className="text-p7 truncate">
-                        <TruncatedText text={secret.name} />
+                        <TruncatedText text={secret.rule_id} />
                       </div>
                     </DFLink>
                   </div>

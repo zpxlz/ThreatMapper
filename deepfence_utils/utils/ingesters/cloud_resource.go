@@ -99,6 +99,7 @@ type CloudResource struct {
 	Users                          *json.RawMessage `json:"users"`
 	UserGroups                     *json.RawMessage `json:"user-groups"`
 	ResourcesVpcConfig             *json.RawMessage `json:"resources_vpc_config"`
+	ResourceGroup                  string           `json:"resource_group,omitempty"`
 }
 
 func (c *CloudResource) ToMap() (map[string]interface{}, error) {
@@ -189,15 +190,19 @@ func convertStructFieldToJSONString(bb map[string]interface{}, key string) map[s
 }
 
 type CloudResourceRefreshStatus struct {
-	CloudNodeID    string `json:"cloud_node_id"`
-	RefreshMessage string `json:"refresh_message"`
-	RefreshStatus  string `json:"refresh_status"`
+	CloudNodeID     string `json:"cloud_node_id"`
+	RefreshMessage  string `json:"refresh_message"`
+	RefreshStatus   string `json:"refresh_status"`
+	RefreshMetadata string `json:"refresh_metadata"`
+	UpdatedAt       int64  `json:"updated_at"`
 }
 
 func (c *CloudResourceRefreshStatus) ToMap() map[string]interface{} {
 	return map[string]interface{}{
-		"cloud_node_id":   c.CloudNodeID,
-		"refresh_message": c.RefreshMessage,
-		"refresh_status":  c.RefreshStatus,
+		"cloud_node_id":    c.CloudNodeID,
+		"refresh_message":  c.RefreshMessage,
+		"refresh_status":   c.RefreshStatus,
+		"refresh_metadata": c.RefreshMetadata,
+		"updated_at":       c.UpdatedAt,
 	}
 }

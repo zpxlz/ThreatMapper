@@ -11,9 +11,10 @@ import {
 import {
   CompletionCompletionNodeFieldReq,
   ModelNodeIdentifierNodeTypeEnum,
+  ModelScanInfoStatusEnum,
   ModelScanListReq,
 } from '@/api/generated';
-import { ScanTypeEnum } from '@/types/common';
+import { CloudNodeType, ScanTypeEnum } from '@/types/common';
 import { getResponseErrors } from '@/utils/403';
 import { apiWrapper } from '@/utils/api';
 
@@ -27,10 +28,24 @@ export const commonQueries = createQueryKeys('common', {
     const { nodeId, nodeType, size, scanType } = filters;
     return {
       queryKey: [{ filters }],
-      queryFn: async ({ pageParam = 0 }) => {
+      queryFn: async ({
+        pageParam = 0,
+      }): Promise<
+        | { error: string; message: string }
+        | {
+            data: Array<{
+              createdAt: number;
+              scanId: string;
+              status: ModelScanInfoStatusEnum;
+              nodeName: string;
+            }>;
+            hasNextPage: boolean;
+          }
+      > => {
         if (!nodeId || !nodeType || !scanType) {
           return {
             data: [],
+            hasNextPage: false,
           };
         }
 
@@ -52,7 +67,14 @@ export const commonQueries = createQueryKeys('common', {
               filter_in: {},
             },
             match_filter: { filter_in: {} },
-            order_filter: { order_fields: [] },
+            order_filter: {
+              order_fields: [
+                {
+                  descending: true,
+                  field_name: 'created_at',
+                },
+              ],
+            },
             compare_filter: null,
           },
           node_ids: [
@@ -63,7 +85,7 @@ export const commonQueries = createQueryKeys('common', {
           ],
           window: {
             offset: pageParam,
-            size,
+            size: size + 1,
           },
         };
 
@@ -84,11 +106,12 @@ export const commonQueries = createQueryKeys('common', {
         if (!result.value.scans_info) {
           return {
             data: [],
+            hasNextPage: false,
           };
         }
 
         return {
-          data: (result.value.scans_info ?? []).slice(0, size)?.map((res) => {
+          data: (result.value.scans_info ?? []).slice(0, size).map((res) => {
             return {
               createdAt: res.created_at,
               scanId: res.scan_id,
@@ -96,6 +119,7 @@ export const commonQueries = createQueryKeys('common', {
               nodeName: res.node_name,
             };
           }),
+          hasNextPage: result.value.scans_info.length > size,
         };
       },
     };
@@ -113,6 +137,7 @@ export const commonQueries = createQueryKeys('common', {
         const scanResultsReq: CompletionCompletionNodeFieldReq = {
           completion: searchText,
           field_name: fieldName,
+          is_array_field: fieldName === 'tags',
           window: {
             offset: pageParam,
             size,
@@ -121,6 +146,43 @@ export const commonQueries = createQueryKeys('common', {
 
         const api = apiWrapper({
           fn: getScanResultCompletionApiClient().completeHostInfo,
+        });
+        const response = await api({
+          completionCompletionNodeFieldReq: scanResultsReq,
+        });
+
+        if (!response.ok) {
+          throw response.error;
+        }
+
+        return {
+          data: response.value?.possible_values?.slice(0, size) || [],
+        };
+      },
+    };
+  },
+  searchKubernetesClusterFilters: (filters: {
+    fieldName: string;
+    searchText: string;
+    size: number;
+  }) => {
+    return {
+      queryKey: [{ filters }],
+      queryFn: async ({ pageParam = 0 }) => {
+        const { fieldName, searchText, size } = filters;
+
+        const scanResultsReq: CompletionCompletionNodeFieldReq = {
+          completion: searchText,
+          field_name: fieldName,
+          is_array_field: fieldName === 'tags',
+          window: {
+            offset: pageParam,
+            size,
+          },
+        };
+
+        const api = apiWrapper({
+          fn: getScanResultCompletionApiClient().completeKubernetesClusterInfo,
         });
         const response = await api({
           completionCompletionNodeFieldReq: scanResultsReq,
@@ -145,6 +207,7 @@ export const commonQueries = createQueryKeys('common', {
         const scanResultsReq: CompletionCompletionNodeFieldReq = {
           completion: searchText,
           field_name: fieldName,
+          is_array_field: fieldName === 'tags',
           window: {
             offset: pageParam,
             size,
@@ -181,6 +244,7 @@ export const commonQueries = createQueryKeys('common', {
         const scanResultsReq: CompletionCompletionNodeFieldReq = {
           completion: searchText,
           field_name: fieldName,
+          is_array_field: fieldName === 'tags',
           window: {
             offset: pageParam,
             size,
@@ -314,6 +378,61 @@ export const commonQueries = createQueryKeys('common', {
 
         return {
           data: response.value.possible_values?.slice(0, size) || [],
+        };
+      },
+    };
+  },
+  searchCloudAccountName: (filters: {
+    fieldName: string;
+    searchText: string;
+    size: number;
+    cloudProvider: CloudNodeType;
+  }) => {
+    return {
+      queryKey: [{ filters }],
+      queryFn: async ({ pageParam = 0 }) => {
+        const { searchText, cloudProvider, size, fieldName } = filters;
+
+        const scanResultsReq: CompletionCompletionNodeFieldReq = {
+          scan_id: '',
+          completion: searchText,
+          field_name: fieldName,
+          filters: {
+            compare_filter: null,
+            contains_filter: {
+              filter_in: {
+                cloud_provider: [cloudProvider],
+              },
+            },
+            order_filter: { order_fields: [] },
+            match_filter: { filter_in: {} },
+          },
+          window: {
+            offset: pageParam,
+            size,
+          },
+        };
+
+        const api = apiWrapper({
+          fn: getScanResultCompletionApiClient().completeCloudAccount,
+        });
+        const response = await api({
+          completionCompletionNodeFieldReq: scanResultsReq,
+        });
+
+        if (!response.ok) {
+          throw response.error;
+        }
+
+        if (response.value === null) {
+          // TODO: handle this case with 404 status maybe
+          throw new Error('Error getting cloud service');
+        }
+
+        return {
+          data:
+            response.value?.possible_values?.slice(0, size).filter((value) => !!value) ||
+            [],
         };
       },
     };

@@ -62,8 +62,8 @@ func (h *Handler) APIAuthHandler(w http.ResponseWriter, r *http.Request) {
 		h.respondError(err, w)
 		return
 	}
-	// licenseActive - not needed in this api
-	accessTokenResponse, err := user.GetAccessToken(h.TokenAuth, model.GrantTypeAPIToken, false)
+
+	accessTokenResponse, err := user.GetAccessToken(h.TokenAuth, model.GrantTypeAPIToken, true)
 	if err != nil {
 		h.respondError(err, w)
 		return
@@ -89,18 +89,7 @@ func (h *Handler) RefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	licenseActive := false
-	if grantType == model.GrantTypePassword {
-		pgClient, err := directory.PostgresClient(r.Context())
-		if err == nil {
-			license, err := model.GetLicense(r.Context(), pgClient)
-			if err == nil {
-				licenseActive = license.IsActive
-			}
-		}
-	}
-
-	accessTokenResponse, err := user.GetAccessToken(h.TokenAuth, grantType, licenseActive)
+	accessTokenResponse, err := user.GetAccessToken(h.TokenAuth, grantType, true)
 	if err != nil {
 		h.respondError(err, w)
 		return
@@ -216,19 +205,7 @@ func (h *Handler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	licenseActive := false
-	licenseRegistered := false
-	var licenseKey string
-	var licenseEmailDomain string
-	license, err := model.GetLicense(ctx, pgClient)
-	if err == nil {
-		licenseRegistered = true
-		licenseActive = license.IsActive
-		licenseKey = license.LicenseKey
-		licenseEmailDomain = license.LicenseEmailDomain
-	}
-
-	accessTokenResponse, err := u.GetAccessToken(h.TokenAuth, model.GrantTypePassword, licenseActive)
+	accessTokenResponse, err := u.GetAccessToken(h.TokenAuth, model.GrantTypePassword, true)
 	if err != nil {
 		h.respondError(err, w)
 		return
@@ -241,9 +218,6 @@ func (h *Handler) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		ResponseAccessToken: *accessTokenResponse,
 		OnboardingRequired:  model.IsOnboardingRequired(ctx),
 		PasswordInvalidated: u.PasswordInvalidated,
-		LicenseRegistered:   licenseRegistered,
-		LicenseKey:          licenseKey,
-		EmailDomain:         licenseEmailDomain,
 	})
 	if err != nil {
 		log.Error().Msg(err.Error())

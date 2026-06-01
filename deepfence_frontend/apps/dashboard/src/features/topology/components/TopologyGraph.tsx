@@ -4,12 +4,12 @@ import { useDebounce, useEffectOnce, useHoverDirty, useMeasure } from 'react-use
 import { cn } from 'tailwind-preset';
 import { CircleSpinner } from 'ui-components';
 
+import { DetailModal, useDetailModalState } from '@/components/detail-modal-stack';
 import { DFLink } from '@/components/DFLink';
 import { DetailsLineIcon } from '@/components/icons/common/DetailsLine';
 import { ErrorStandardSolidIcon } from '@/components/icons/common/ErrorStandardSolid';
 import { ResizeDownIcon } from '@/components/icons/common/ResizeDown';
 import { ResizeUpIcon } from '@/components/icons/common/ResizeUp';
-import { NodeDetailsStackedModal } from '@/features/topology/components/NodeDetailsStackedModal';
 import {
   TopologyLoaderData,
   useTopologyActionDeduplicator,
@@ -18,6 +18,7 @@ import { useG6Graph } from '@/features/topology/hooks/useG6Graph';
 import { G6GraphEvent, G6Node, NodeModel } from '@/features/topology/types/graph';
 import {
   focusItem,
+  isCloudServiceNode,
   itemExpands,
   itemHasDetails,
   nodeToFront,
@@ -43,6 +44,7 @@ export const TopologyGraph = () => {
   // measures parent of the graph, so we can set the graph width and height
   const [measureRef, { height, width }] = useMeasure<HTMLDivElement>();
   const { mode } = useTheme();
+  const { detailModalItem, setDetailModalItem } = useDetailModalState();
 
   // tooltip related hooks
   const [tooltipLoc, setTooltipLoc] = useState<TooltipState>({
@@ -68,13 +70,6 @@ export const TopologyGraph = () => {
     300,
     [isHoveringTooltip, tooltipLoc],
   );
-
-  // for sidepanel to know which item we need to show details for
-  const [clickedItem, setClickedItem] = useState<{
-    nodeId: string;
-    nodeType: string;
-    parentId?: string;
-  }>();
 
   // g6 hooks
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -246,11 +241,40 @@ export const TopologyGraph = () => {
                 return { ...prev, show: false };
               });
               if (!model?.df_data?.type || !model?.df_data?.id) return;
-              setClickedItem({
-                nodeId: model.df_data.id,
-                nodeType: model.df_data.type,
-                parentId: model.df_data.immediate_parent_id,
-              });
+              const nodeType = model.df_data.type;
+              const nodeId = model.df_data.id;
+              if (nodeType === 'host') {
+                setDetailModalItem({
+                  kind: 'host',
+                  nodeId,
+                });
+              } else if (nodeType === 'container') {
+                setDetailModalItem({
+                  kind: 'container',
+                  nodeId,
+                });
+              } else if (nodeType === 'process') {
+                setDetailModalItem({
+                  kind: 'process',
+                  nodeId,
+                });
+              } else if (nodeType === 'container_image') {
+                setDetailModalItem({
+                  kind: 'container_image',
+                  nodeId,
+                });
+              } else if (nodeType === 'pod') {
+                setDetailModalItem({
+                  kind: 'pod',
+                  nodeId,
+                });
+              } else if (isCloudServiceNode({ type: nodeType })) {
+                setDetailModalItem({
+                  kind: 'cloud_service',
+                  nodeType,
+                  region: model.df_data.immediate_parent_id ?? '',
+                });
+              }
             }}
           />
         </div>
@@ -272,16 +296,15 @@ export const TopologyGraph = () => {
             <NodeLimitExceeded />
           </div>
         ) : null}
+        {detailModalItem ? (
+          <DetailModal
+            itemInfo={detailModalItem}
+            onItemClose={() => {
+              setDetailModalItem(null);
+            }}
+          />
+        ) : null}
       </div>
-      {clickedItem ? (
-        <NodeDetailsStackedModal
-          node={clickedItem}
-          open={true}
-          onOpenChange={(open) => {
-            if (!open) setClickedItem(undefined);
-          }}
-        />
-      ) : null}
     </>
   );
 };

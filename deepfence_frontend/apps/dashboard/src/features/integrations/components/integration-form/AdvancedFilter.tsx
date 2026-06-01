@@ -1,3 +1,4 @@
+import { upperCase } from 'lodash-es';
 import { useState } from 'react';
 import { useUpdateEffect } from 'react-use';
 import { Listbox, ListboxOption } from 'ui-components';
@@ -77,6 +78,8 @@ export const AdvancedFilters = ({
     setSelectedCloudAccounts([]);
   }, [notificationType, cloudProvider]);
 
+  const severities = [...SeverityEnumList];
+
   return (
     <div className="col-span-2 mt-6">
       <div className="flex text-text-input-value ">
@@ -85,10 +88,10 @@ export const AdvancedFilters = ({
       <div className="grid grid-cols-2 gap-y-8 gap-x-8 pt-4">
         {isCloudComplianceNotification(notificationType) && cloudProvider ? (
           <SearchableCloudAccountsList
-            label={`${cloudProvider} Account`}
+            label={`${upperCase(cloudProvider)} Account`}
             triggerVariant="select"
             defaultSelectedAccounts={selectedCloudAccounts}
-            cloudProvider={cloudProvider.toLowerCase() as 'aws' | 'gcp' | 'azure'}
+            cloudProvider={cloudProvider as 'aws' | 'gcp' | 'azure'}
             onClearAll={() => {
               setSelectedCloudAccounts([]);
             }}
@@ -104,9 +107,6 @@ export const AdvancedFilters = ({
             onChange={(value) => {
               setHosts(value);
             }}
-            onClearAll={() => {
-              setHosts([]);
-            }}
             agentRunning={false}
             active={false}
           />
@@ -119,9 +119,6 @@ export const AdvancedFilters = ({
               defaultSelectedContainers={containers}
               onChange={(value) => {
                 setContainers(value);
-              }}
-              onClearAll={() => {
-                setContainers([]);
               }}
               active={false}
               valueKey="nodeName"
@@ -254,7 +251,7 @@ export const AdvancedFilters = ({
                 return value && value.length ? `${value.length} selected` : '';
               }}
             >
-              {SeverityEnumList.map((severity) => {
+              {severities.map((severity) => {
                 return (
                   <ListboxOption key={severity} value={severity}>
                     {getSeverityPrettyName(severity)}

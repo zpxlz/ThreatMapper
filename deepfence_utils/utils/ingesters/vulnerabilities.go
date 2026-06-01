@@ -1,5 +1,9 @@
 package ingesters
 
+import (
+	"strings"
+)
+
 type VulnerabilityScanStatus struct {
 	ScanID      string `json:"scan_id"`
 	ScanStatus  string `json:"scan_status"`
@@ -26,12 +30,17 @@ type Vulnerability struct {
 	ExploitabilityScore     int      `json:"exploitability_score"`
 	InitExploitabilityScore int      `json:"init_exploitability_score"`
 	HasLiveConnection       bool     `json:"has_live_connection"`
+	CISAKEV                 bool     `json:"cisa_kev"`
+	EPSSScore               float64  `json:"epss_score"`
+	Namespace               string   `json:"namespace"`
 }
 
 type VulnerabilityRule struct {
+	NodeID             string   `json:"node_id"`
 	CveID              string   `json:"cve_id"`
 	CveType            string   `json:"cve_type"`
 	CveSeverity        string   `json:"cve_severity"`
+	PackageName        string   `json:"package_name"`
 	CveFixedIn         string   `json:"cve_fixed_in"`
 	CveLink            string   `json:"cve_link"`
 	CveDescription     string   `json:"cve_description"`
@@ -41,6 +50,9 @@ type VulnerabilityRule struct {
 	URLs               []string `json:"urls"`
 	ExploitPOC         string   `json:"exploit_poc"`
 	ParsedAttackVector string   `json:"parsed_attack_vector"`
+	CISAKEV            bool     `json:"cisa_kev"`
+	EPSSScore          float64  `json:"epss_score"`
+	Namespace          string   `json:"namespace"`
 }
 
 type VulnerabilityData struct {
@@ -67,9 +79,11 @@ func (c Vulnerability) Split() (VulnerabilityData, VulnerabilityRule) {
 			InitExploitabilityScore: c.InitExploitabilityScore,
 			HasLiveConnection:       c.HasLiveConnection,
 		}, VulnerabilityRule{
+			NodeID:             strings.Join([]string{c.CveID, c.Namespace, c.CveCausedByPackage}, "-"),
 			CveID:              c.CveID,
 			CveType:            c.CveType,
 			CveSeverity:        c.CveSeverity,
+			PackageName:        c.CveCausedByPackage,
 			CveFixedIn:         c.CveFixedIn,
 			CveLink:            c.CveLink,
 			CveDescription:     c.CveDescription,
@@ -79,5 +93,8 @@ func (c Vulnerability) Split() (VulnerabilityData, VulnerabilityRule) {
 			URLs:               c.URLs,
 			ExploitPOC:         c.ExploitPOC,
 			ParsedAttackVector: c.ParsedAttackVector,
+			CISAKEV:            c.CISAKEV,
+			EPSSScore:          c.EPSSScore,
+			Namespace:          c.Namespace,
 		}
 }

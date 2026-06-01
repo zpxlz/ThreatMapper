@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 
 	pb "github.com/deepfence/agent-plugins-grpc/srcgo"
 	"google.golang.org/grpc"
@@ -14,6 +15,7 @@ import (
 	"github.com/deepfence/ThreatMapper/deepfence_bootstrapper/supervisor"
 	ctl "github.com/deepfence/ThreatMapper/deepfence_utils/controls"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/log"
+	"github.com/deepfence/ThreatMapper/deepfence_utils/threatintel"
 	"github.com/deepfence/ThreatMapper/deepfence_utils/utils"
 	dfUtils "github.com/deepfence/df-utils"
 )
@@ -121,15 +123,16 @@ func StopSecretScan(req ctl.StopSecretScanRequest) error {
 // download, update rules and restart scanner
 func UpdateSecretsRules(req ctl.ThreatIntelInfo) error {
 	if req.SecretsRulesHash == secretsRuleshash {
-		log.Warn().Msgf("skip secrets rules update already new")
+		log.Warn().Msgf("skip secrets rules update, already new")
 		return nil
 	}
 
 	newRules := "new_secret_rules.tar.gz"
-	configPath := path.Join(dfUtils.GetDfInstallDir(), "/home/deepfence/bin/secret-scanner/config")
+	rulesPkgPath := path.Join(dfUtils.GetDfInstallDir(), "/home/deepfence/bin/secret-scanner")
+	rulesPath := path.Join(rulesPkgPath, "rules")
 
 	if err := downloadFile(newRules, req.SecretsRulesURL); err != nil {
-		log.Error().Err(err).Msg("failed to downlaod secrets rules")
+		log.Error().Err(err).Msg("failed to download secrets rules")
 		return err
 	}
 	defer os.Remove(newRules)
@@ -142,7 +145,7 @@ func UpdateSecretsRules(req ctl.ThreatIntelInfo) error {
 	}
 
 	// remove old rules
-	os.RemoveAll(configPath)
+	os.RemoveAll(rulesPath)
 
 	data, err := os.ReadFile(newRules)
 	if err != nil {
@@ -150,9 +153,18 @@ func UpdateSecretsRules(req ctl.ThreatIntelInfo) error {
 		return err
 	}
 
-	if err := utils.ExtractTarGz(bytes.NewReader(data), configPath); err != nil {
+	if err := utils.ExtractTarGz(bytes.NewReader(data), rulesPkgPath); err != nil {
 		log.Error().Err(err).Msg("failed to extract rules")
 		return err
+	}
+
+	for _, infile := range []string{
+		filepath.Join(rulesPath, "df-secret.json"),
+	} {
+		err = threatintel.ExtractDFRules2NativeRules(infile, rulesPath)
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Info().Msg("secrets rules updated starting secret scanner")

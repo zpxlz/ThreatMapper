@@ -1,6 +1,10 @@
-BATCH_SIZE=${1:-100}
-TRUNCATE_SIZE=${2:-10}
+#!/bin/bash
 
-PATH=${DF_INSTALL_DIR:-/home/deepfence}
+export BATCH_SIZE=${1:-100}
+export TRUNCATE_SIZE=${2:-10}
 
-exec $PATH/bin/shipper --base-path="${DF_INSTALL_DIR:-/}" --truncate-size=$TRUNCATE_SIZE --routes=$PATH/routes.yaml --batch-size=$BATCH_SIZE
+if [[ "${DF_INSTALL_DIR,,}" == *"/home/deepfence" ]]; then
+  exec $DF_INSTALL_DIR/bin/shipper --base-path="${DF_INSTALL_DIR:-/}" --truncate-size=$TRUNCATE_SIZE --routes=$DF_INSTALL_DIR/routes.yaml --batch-size=$BATCH_SIZE
+else
+  exec $DF_INSTALL_DIR/home/deepfence/bin/shipper --base-path="${DF_INSTALL_DIR:-/}" --truncate-size=$TRUNCATE_SIZE --routes=$DF_INSTALL_DIR/home/deepfence/routes.yaml --batch-size=$BATCH_SIZE
+fi

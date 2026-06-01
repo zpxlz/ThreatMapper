@@ -19,21 +19,20 @@ import (
 	"github.com/deepfence/ThreatMapper/deepfence_utils/log"
 )
 
-type PktDirection string
-type PolicyAction string
-
 const (
 	maxIdleConnsPerHost = 1024
-	HostMountDir        = "/fenced/mnt/host/"
-	CheckTypeHIPAA      = "hipaa"
-	CheckTypePCI        = "pci"
-	CheckTypeNIST       = "nist"
-	CheckTypeGDPR       = "gdpr"
 )
 
-type ComplianceScan struct {
-	Code  string `json:"code"`
-	Label string `json:"label"`
+func GetCustomTags() []string {
+	var customTags []string
+	// User defined tags
+	customTagsStr := os.Getenv("CUSTOM_TAGS")
+	if customTagsStr != "" {
+		for _, tag := range strings.Split(customTagsStr, ",") {
+			customTags = append(customTags, strings.TrimSpace(tag))
+		}
+	}
+	return customTags
 }
 
 func RemoveLastCharacter(s string) string {
@@ -45,6 +44,7 @@ func BuildHttpClientWithCert(certPath string) (*http.Client, error) {
 	// Set up our own certificate pool
 	tlsConfig := &tls.Config{RootCAs: x509.NewCertPool(), InsecureSkipVerify: true}
 	transport := &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
 		MaxIdleConnsPerHost: maxIdleConnsPerHost,
 		TLSHandshakeTimeout: 0 * time.Second,
 		TLSClientConfig:     tlsConfig,
@@ -228,6 +228,15 @@ func GetKubernetesDetails() (string, string, string, string, error) {
 		}
 	}
 	return kubeSystemNamespaceUid, kubeClusterName, kubernetesVersion, kubernetesNodeRole, err
+}
+
+func InSlice[T comparable](e T, s []T) bool {
+	for _, v := range s {
+		if v == e {
+			return true
+		}
+	}
+	return false
 }
 
 func InArray(val interface{}, array interface{}) (exists bool, index int) {

@@ -10,13 +10,16 @@ import (
 	"github.com/deepfence/ThreatMapper/deepfence_utils/telemetry"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/rs/zerolog/log"
+	"github.com/samber/mo"
 )
 
 type CompletionNodeFieldReq struct {
-	Completion string            `json:"completion" required:"true"`
-	FieldName  string            `json:"field_name" required:"true"`
-	Window     model.FetchWindow `json:"window" required:"true"`
-	ScanID     string            `json:"scan_id" required:"false"`
+	Completion   string                   `json:"completion" required:"true"`
+	FieldName    string                   `json:"field_name" required:"true"`
+	IsArrayField bool                     `json:"is_array_field" required:"false"`
+	Window       model.FetchWindow        `json:"window" required:"true"`
+	ScanID       string                   `json:"scan_id" required:"false"` //TODO: deprecate in favor of Filters
+	Filters      *reporters.FieldsFilters `json:"filters" required:"false"`
 }
 
 type CompletionNodeFieldRes struct {
@@ -48,29 +51,52 @@ func FieldValueCompletion[T reporters.Cypherable](ctx context.Context, req Compl
 
 	query := ""
 
+	filterClauses := mo.None[reporters.FieldsFilters]()
+	if req.Filters != nil {
+		filterClauses = mo.Some(*req.Filters)
+	}
+
+	var cypherNodeName string
+	if req.ScanID != "" {
+		cypherNodeName = "r"
+	} else {
+		cypherNodeName = "n"
+	}
+	var fieldName string
+	var substringMatch string
+	if req.IsArrayField {
+		fieldName = "field_name"
+		substringMatch = `UNWIND ` + cypherNodeName + `.` + req.FieldName + ` as ` + fieldName + `
+		WITH ` + fieldName + `
+		WHERE ` + fieldName + ` =~ '^` + req.Completion + `.*'`
+	} else {
+		fieldName = cypherNodeName + `.` + req.FieldName
+		substringMatch = `WHERE ` + fieldName + ` =~ '^` + req.Completion + `.*'`
+	}
+
 	if req.ScanID != "" {
 		if dummy.NodeType() == "CloudCompliance" {
 			query = `
 			MATCH (n{node_id: $scan_id}) -[:DETECTED]-> (r:` + dummy.NodeType() + `)
-			WHERE r.` + req.FieldName + ` =~ '^` + req.Completion + `.*'
-			RETURN DISTINCT r.` + req.FieldName + `
-			ORDER BY r.` + req.FieldName +
-				req.Window.FetchWindow2CypherQuery()
+			` + substringMatch + `
+			` + reporters.ParseFieldFilters2CypherWhereConditions(`n`, filterClauses, false) + `
+			RETURN DISTINCT ` + fieldName + `
+			ORDER BY ` + fieldName + req.Window.FetchWindow2CypherQuery()
 		} else {
 			query = `
 			MATCH (n{node_id: $scan_id}) -[:DETECTED]-> (m) -[:IS]-> (r:` + dummy.NodeType() + `)
-			WHERE r.` + req.FieldName + ` =~ '^` + req.Completion + `.*'
-			RETURN DISTINCT r.` + req.FieldName + `
-			ORDER BY r.` + req.FieldName +
-				req.Window.FetchWindow2CypherQuery()
+			` + substringMatch + `
+			` + reporters.ParseFieldFilters2CypherWhereConditions(`n`, filterClauses, false) + `
+			RETURN DISTINCT ` + fieldName + `
+			ORDER BY ` + fieldName + req.Window.FetchWindow2CypherQuery()
 		}
 	} else {
 		query = `
 		MATCH (n:` + dummy.NodeType() + `) 
-		WHERE n.` + req.FieldName + ` =~ '^` + req.Completion + `.*'
-		RETURN DISTINCT n.` + req.FieldName + `
-		ORDER BY n.` + req.FieldName +
-			req.Window.FetchWindow2CypherQuery()
+		` + substringMatch + `
+		` + reporters.ParseFieldFilters2CypherWhereConditions(`n`, filterClauses, false) + `
+		RETURN DISTINCT ` + fieldName + `
+		ORDER BY ` + fieldName + req.Window.FetchWindow2CypherQuery()
 	}
 
 	log.Debug().Msgf("completion query: \n%v", query)

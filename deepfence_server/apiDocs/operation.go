@@ -176,6 +176,22 @@ func (d *OpenAPIDocs) AddLookupOperations() {
 	d.AddOperation("getCloudCompliances", http.MethodPost, "/deepfence/lookup/cloud-compliances",
 		"Retrieve Cloud Compliances data", "Retrieve all the data associated with cloud-compliances",
 		http.StatusOK, []string{tagLookup}, bearerToken, new(LookupFilter), new([]CloudCompliance))
+
+	d.AddOperation("getComplianceControls", http.MethodPost, "/deepfence/lookup/compliance-controls",
+		"Retrieve Cloud Compliances Control data", "Retrieve all the data associated with cloud compliance controls",
+		http.StatusOK, []string{tagLookup}, bearerToken, new(LookupFilter), new([]CloudComplianceControl))
+
+	d.AddOperation("getMalwareRules", http.MethodPost, "/deepfence/lookup/malware-rules",
+		"Get Malware Rules", "Retrieve malware rule resources",
+		http.StatusOK, []string{tagLookup}, bearerToken, new(LookupFilter), new([]MalwareRule))
+
+	d.AddOperation("getSecretRules", http.MethodPost, "/deepfence/lookup/secret-rules",
+		"Get Secret Rules", "Retrieve secret rule resources",
+		http.StatusOK, []string{tagLookup}, bearerToken, new(LookupFilter), new([]SecretRule))
+
+	d.AddOperation("getVulnerabilityRules", http.MethodPost, "/deepfence/lookup/vulnerability-rules",
+		"Get Vulnerability Rules", "Retrieve vulnerability rule resources",
+		http.StatusOK, []string{tagLookup}, bearerToken, new(LookupFilter), new([]VulnerabilityRule))
 }
 
 func (d *OpenAPIDocs) AddSearchOperations() {
@@ -220,12 +236,12 @@ func (d *OpenAPIDocs) AddSearchOperations() {
 		"Search Compliances", "Search across all the data associated with compliances",
 		http.StatusOK, []string{tagSearch}, bearerToken, new(SearchNodeReq), new([]Compliance))
 
-	d.AddOperation("searchVulerabilityRules", http.MethodPost, "/deepfence/search/vulnerability-rules",
+	d.AddOperation("searchVulnerabilityRules", http.MethodPost, "/deepfence/search/vulnerability-rules",
 		"Search Vulnerability Rules", "Search across all the data associated with vulnerability rules",
 		http.StatusOK, []string{tagSearch}, bearerToken, new(SearchNodeReq), new([]VulnerabilityRule))
 
 	d.AddOperation("searchSecretRules", http.MethodPost, "/deepfence/search/secret-rules",
-		"Search Secret Rules", "Search across all the data associated with secret ruless",
+		"Search Secret Rules", "Search across all the data associated with secret rules",
 		http.StatusOK, []string{tagSearch}, bearerToken, new(SearchNodeReq), new([]SecretRule))
 
 	d.AddOperation("searchMalwareRules", http.MethodPost, "/deepfence/search/malware-rules",
@@ -559,6 +575,9 @@ func (d *OpenAPIDocs) AddScansOperations() {
 	d.AddOperation("resultsVulnerabilityScans", http.MethodPost, "/deepfence/scan/results/vulnerability",
 		"Get Vulnerability Scans Results", "Get Vulnerability Scan results on agent or registry",
 		http.StatusOK, []string{tagVulnerability}, bearerToken, new(ScanResultsReq), new(VulnerabilityScanResult))
+	d.AddOperation("resultsVulnerablePackagesScans", http.MethodPost, "/deepfence/scan/results/packages",
+		"Get Vulnerability Package Scans Results", "Get Vulnerability Pacakge Scan results on agent or registry",
+		http.StatusOK, []string{tagVulnerability}, bearerToken, new(ScanResultsReq), new(PackageVulnerabilityScanResult))
 	d.AddOperation("resultsSecretScan", http.MethodPost, "/deepfence/scan/results/secret",
 		"Get Secret Scans Results", "Get Secret Scans results on agent or registry",
 		http.StatusOK, []string{tagSecretScan}, bearerToken, new(ScanResultsReq), new(SecretScanResult))
@@ -612,10 +631,10 @@ func (d *OpenAPIDocs) AddScansOperations() {
 	// compliance and cloud-compliance results count grouped by control_id
 	d.AddOperation("groupResultsCompliance", http.MethodPost, "/deepfence/scan/results/count/group/compliance",
 		"Count Compliance Results by Control ID", "Count Compliance Results grouped by Control ID",
-		http.StatusOK, []string{tagCompliance}, bearerToken, new(ComplinaceScanResultsGroupReq), new(ComplinaceScanResultsGroupResp))
+		http.StatusOK, []string{tagCompliance}, bearerToken, new(ComplinaceScanResultsGroupReq), new(ComplianceScanResultsGroupResp))
 	d.AddOperation("groupResultsCloudCompliance", http.MethodPost, "/deepfence/scan/results/count/group/cloud-compliance",
 		"Count Cloud Compliance Results by Control ID", "Count Cloud Compliance Results grouped by Control ID",
-		http.StatusOK, []string{tagCompliance}, bearerToken, new(ComplinaceScanResultsGroupReq), new(ComplinaceScanResultsGroupResp))
+		http.StatusOK, []string{tagCompliance}, bearerToken, new(ComplinaceScanResultsGroupReq), new(ComplianceScanResultsGroupResp))
 
 	d.AddOperation("getAllNodesInScanResults", http.MethodPost, "/deepfence/scan/nodes-in-result",
 		"Get all nodes in given scan result ids", "Get all nodes in given scan result ids",
@@ -634,6 +653,14 @@ func (d *OpenAPIDocs) AddScansOperations() {
 	d.AddOperation("notifyScanResult", http.MethodPost, "/deepfence/scan/results/action/notify",
 		"Notify Scans Results", "Notify scan results in connected integration channels",
 		http.StatusNoContent, []string{tagScanResults}, bearerToken, new(ScanResultsActionRequest), nil)
+
+	//Rules operations
+	d.AddOperation("unmaskRules", http.MethodPost, "/deepfence/rules/action/unmask",
+		"Unmask Rules", "Unmask rules",
+		http.StatusNoContent, []string{tagRules}, bearerToken, new(RulesActionRequest), nil)
+	d.AddOperation("maskRules", http.MethodPost, "/deepfence/rules/action/mask",
+		"mask Rules", "mask rules",
+		http.StatusNoContent, []string{tagRules}, bearerToken, new(RulesActionRequest), nil)
 
 	// Bulk Delete Scans
 	d.AddOperation("bulkDeleteScans", http.MethodPost, "/deepfence/scans/bulk/delete",
@@ -861,29 +888,20 @@ func (d *OpenAPIDocs) AddSettingsOperations() {
 	d.AddOperation("uploadPostureControls", http.MethodPut, "/deepfence/database/posture",
 		"Upload Posture Controls", "Upload posture controls for use in posture scans",
 		http.StatusOK, []string{tagSettings}, bearerToken, new(threatintel.DBUploadRequest), new(MessageResponse))
+	d.AddOperation("databaseInfo", http.MethodGet, "/deepfence/database/info",
+		"Get Database Info", "get database updated at info",
+		http.StatusOK, []string{tagSettings}, bearerToken, nil, new(DatabaseInfoResponse))
 
 	d.AddOperation("getAgentBinaryDownloadURL", http.MethodGet, "/deepfence/agent-deployment/binary/download-url",
 		"Get agent binary download url", "Get agent binary download url",
 		http.StatusOK, []string{tagSettings}, bearerToken, nil, new(GetAgentBinaryDownloadURLResponse))
-}
 
-func (d *OpenAPIDocs) AddLicenseOperations() {
-	// License
-	d.AddOperation("generateLicense", http.MethodPost, "/deepfence/license/generate",
-		"Generate License Key", "Generate a new ThreatMapper license key",
-		http.StatusOK, []string{tagSettings}, bearerToken, new(GenerateLicenseRequest), new(GenerateLicenseResponse))
-
-	d.AddOperation("registerLicense", http.MethodPost, "/deepfence/license",
-		"Register License", "Register new license key to the console and activate",
-		http.StatusOK, []string{tagSettings}, bearerToken, new(RegisterLicenseRequest), new(RegisterLicenseResponse))
-
-	d.AddOperation("getLicense", http.MethodGet, "/deepfence/license",
-		"Get License Details", "Get license status and expiry",
-		http.StatusOK, []string{tagSettings}, bearerToken, nil, new(License))
-
-	d.AddOperation("deleteLicense", http.MethodDelete, "/deepfence/license",
-		"Delete License", "Delete license from the console database",
-		http.StatusNoContent, []string{tagSettings}, bearerToken, nil, nil)
+	d.AddOperation("getDeepfenceCommunicationMessages", http.MethodGet, "/deepfence/deepfence-communication/message",
+		"Get Deepfence communication messages", "Get Deepfence communication messages",
+		http.StatusOK, []string{tagSettings}, bearerToken, nil, new([]DeepfenceCommunication))
+	d.AddOperation("markDeepfenceCommunicationRead", http.MethodPut, "/deepfence/deepfence-communication/message/{id}/read",
+		"Mark Deepfence communication message read", "Mark Deepfence communication message read",
+		http.StatusNoContent, []string{tagSettings}, bearerToken, new(DeepfenceCommunicationID), nil)
 }
 
 func (d *OpenAPIDocs) AddDiffAddOperations() {
@@ -914,11 +932,17 @@ func (d *OpenAPIDocs) AddCompletionOperations() {
 	d.AddOperation("completeHostInfo", http.MethodPost, "/deepfence/complete/host",
 		"Get Completion for host fields", "Complete host info",
 		http.StatusOK, []string{tagCompletion}, bearerToken, new(CompletionNodeFieldReq), new(CompletionNodeFieldRes))
+	d.AddOperation("completeKubernetesClusterInfo", http.MethodPost, "/deepfence/complete/kubernetes-cluster",
+		"Get Completion for kubernetes cluster fields", "Complete kubernetes cluster info",
+		http.StatusOK, []string{tagCompletion}, bearerToken, new(CompletionNodeFieldReq), new(CompletionNodeFieldRes))
 	d.AddOperation("completeCloudCompliance", http.MethodPost, "/deepfence/complete/cloud-compliance",
 		"Get Completion for cloud compliance fields", "Complete cloud compliance info",
 		http.StatusOK, []string{tagCompletion}, bearerToken, new(CompletionNodeFieldReq), new(CompletionNodeFieldRes))
 	d.AddOperation("completeCloudResources", http.MethodPost, "/deepfence/complete/cloud-resources",
 		"Get Completion for cloud resources fields", "Complete cloud resources info",
+		http.StatusOK, []string{tagCompletion}, bearerToken, new(CompletionNodeFieldReq), new(CompletionNodeFieldRes))
+	d.AddOperation("completeCloudAccount", http.MethodPost, "/deepfence/complete/cloud-account",
+		"Get Completion for cloud account fields", "Complete cloud account info",
 		http.StatusOK, []string{tagCompletion}, bearerToken, new(CompletionNodeFieldReq), new(CompletionNodeFieldRes))
 	d.AddOperation("completeComplianceInfo", http.MethodPost, "/deepfence/complete/compliance",
 		"Get Completion for compliance fields", "Complete compliance info",
@@ -928,5 +952,8 @@ func (d *OpenAPIDocs) AddCompletionOperations() {
 		http.StatusOK, []string{tagCompletion}, bearerToken, new(CompletionNodeFieldReq), new(CompletionNodeFieldRes))
 	d.AddOperation("completeContainerInfo", http.MethodPost, "/deepfence/complete/container",
 		"Get Completion for Container fields", "Complete Container info",
+		http.StatusOK, []string{tagCompletion}, bearerToken, new(CompletionNodeFieldReq), new(CompletionNodeFieldRes))
+	d.AddOperation("completeContainerImageInfo", http.MethodPost, "/deepfence/complete/containerimage",
+		"Get Completion for Container Image fields", "Complete Container Image info",
 		http.StatusOK, []string{tagCompletion}, bearerToken, new(CompletionNodeFieldReq), new(CompletionNodeFieldRes))
 }

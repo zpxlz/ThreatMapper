@@ -54,11 +54,32 @@ export const complianceType: {
     ModelBenchmarkType.Hipaa,
     ModelBenchmarkType.Soc2,
     ModelBenchmarkType.Gdpr,
+    ModelBenchmarkType.AwsFoundationalSecurity,
   ],
-  gcp: [ModelBenchmarkType.Cis],
-  gcp_org: [ModelBenchmarkType.Cis],
-  azure: [ModelBenchmarkType.Cis, ModelBenchmarkType.Nist, ModelBenchmarkType.Hipaa],
-  azure_org: [ModelBenchmarkType.Cis, ModelBenchmarkType.Nist, ModelBenchmarkType.Hipaa],
+  gcp: [
+    ModelBenchmarkType.Cis,
+    ModelBenchmarkType.Nist,
+    ModelBenchmarkType.Pci,
+    ModelBenchmarkType.Hipaa,
+  ],
+  gcp_org: [
+    ModelBenchmarkType.Cis,
+    ModelBenchmarkType.Nist,
+    ModelBenchmarkType.Pci,
+    ModelBenchmarkType.Hipaa,
+  ],
+  azure: [
+    ModelBenchmarkType.Cis,
+    ModelBenchmarkType.Nist,
+    ModelBenchmarkType.Hipaa,
+    ModelBenchmarkType.Pci,
+  ],
+  azure_org: [
+    ModelBenchmarkType.Cis,
+    ModelBenchmarkType.Nist,
+    ModelBenchmarkType.Hipaa,
+    ModelBenchmarkType.Pci,
+  ],
   host: [
     ModelBenchmarkType.Hipaa,
     ModelBenchmarkType.Gdpr,
@@ -109,7 +130,7 @@ export const scanPostureApiAction = async ({
   let nodeType = body._nodeType.toString();
   const checkTypes = body._checkTypes.toString()?.split(',') as Array<ModelBenchmarkType>;
 
-  const isCloudScan = !isNonCloudNode(nodeType);
+  const isCloudScan = isCloudOrgNode(nodeType) || isCloudNonOrgNode(nodeType);
 
   if (isKubernetesNode(nodeType as ComplianceScanNodeTypeEnum)) {
     nodeType = 'cluster';

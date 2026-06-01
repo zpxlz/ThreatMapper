@@ -32,10 +32,11 @@ import { VulnerabilityIcon } from '@/components/sideNavigation/icons/Vulnerabili
 import { TruncatedText } from '@/components/TruncatedText';
 import { BreadcrumbWrapper } from '@/features/common/BreadcrumbWrapper';
 import { FilterWrapper } from '@/features/common/FilterWrapper';
+import { SearchableCVEList } from '@/features/vulnerabilities/components/ScanResults/SearchableCVEList';
 import { queries } from '@/queries';
 import { useTheme } from '@/theme/ThemeContext';
 import { ScanTypeEnum, VulnerabilitySeverityType } from '@/types/common';
-import { SeverityEnumList } from '@/utils/enum';
+import { getSeverityPrettyName, SeverityEnumList, SeverityValueType } from '@/utils/enum';
 import { getOrderFromSearchParams, useSortingState } from '@/utils/table';
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -47,6 +48,7 @@ enum FILTER_SEARCHPARAMS_KEYS_ENUM {
   containers = 'containers',
   containerImages = 'containerImages',
   clusters = 'clusters',
+  cveId = 'cveId',
 }
 
 const FILTER_SEARCHPARAMS_DYNAMIC_KEYS = [
@@ -57,12 +59,31 @@ const FILTER_SEARCHPARAMS_DYNAMIC_KEYS = [
 ];
 
 const FILTER_SEARCHPARAMS: Record<FILTER_SEARCHPARAMS_KEYS_ENUM, string> = {
-  liveConnection: 'Live Connection',
-  severity: 'CVE Severity',
+  liveConnection: 'Live connection',
+  severity: 'CVE severity',
   hosts: 'Host',
   containers: 'Container',
-  containerImages: 'Container Images',
-  clusters: 'Clusters',
+  containerImages: 'Container image',
+  clusters: 'Cluster',
+  cveId: 'CVE ID',
+};
+
+const getPrettyNameForAppliedFilters = ({
+  key,
+  value,
+}: {
+  key: string;
+  value: string;
+}) => {
+  switch (key) {
+    case 'severity':
+      return getSeverityPrettyName(value as SeverityValueType);
+    case 'liveConnection':
+      return upperFirst(value);
+
+    default:
+      return value;
+  }
 };
 
 const getAppliedFiltersCount = (searchParams: URLSearchParams) => {
@@ -131,6 +152,27 @@ const Filters = () => {
             );
           })}
         </Combobox>
+        <SearchableCVEList
+          scanId={''}
+          defaultSelectedCVEIds={searchParams.getAll('cveId')}
+          onChange={(values) => {
+            setSearchParams((prev) => {
+              prev.delete('cveId');
+              values.forEach((value) => {
+                prev.append('cveId', value);
+              });
+              prev.delete('page');
+              return prev;
+            });
+          }}
+          onClearAll={() => {
+            setSearchParams((prev) => {
+              prev.delete('cveId');
+              prev.delete('page');
+              return prev;
+            });
+          }}
+        />
         <Combobox
           getDisplayValue={() => FILTER_SEARCHPARAMS['liveConnection']}
           multiple
@@ -173,13 +215,6 @@ const Filters = () => {
         <SearchableHostList
           scanType={ScanTypeEnum.VulnerabilityScan}
           defaultSelectedHosts={searchParams.getAll('hosts')}
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('hosts');
-              prev.delete('page');
-              return prev;
-            });
-          }}
           onChange={(value) => {
             setSearchParams((prev) => {
               prev.delete('hosts');
@@ -194,13 +229,6 @@ const Filters = () => {
         <SearchableContainerList
           scanType={ScanTypeEnum.VulnerabilityScan}
           defaultSelectedContainers={searchParams.getAll('containers')}
-          onClearAll={() => {
-            setSearchParams((prev) => {
-              prev.delete('containers');
-              prev.delete('page');
-              return prev;
-            });
-          }}
           onChange={(value) => {
             setSearchParams((prev) => {
               prev.delete('containers');
@@ -287,7 +315,10 @@ const Filters = () => {
               <FilterBadge
                 key={`${key}-${value}`}
                 onRemove={onFilterRemove({ key, value })}
-                text={value}
+                text={getPrettyNameForAppliedFilters({
+                  key,
+                  value,
+                })}
                 label={FILTER_SEARCHPARAMS[key]}
               />
             );
@@ -380,7 +411,12 @@ const UniqueTable = () => {
       }),
       columnHelper.accessor('cve_attack_vector', {
         enableSorting: false,
-        cell: (info) => <TruncatedText text={info.getValue() ?? ''} />,
+        cell: (info) => {
+          if (!info.getValue().length) {
+            return <div className="ml-[26px] border-b w-[8px] border-text-icon"></div>;
+          }
+          return <TruncatedText text={info.getValue() ?? ''} />;
+        },
         header: () => <TruncatedText text="Attack vector" />,
         minSize: 100,
         size: 120,
@@ -398,7 +434,9 @@ const UniqueTable = () => {
         enableSorting: false,
         enableResizing: true,
         cell: (info) => {
-          if (!info.getValue().length) return '-';
+          if (!info.getValue().length) {
+            return <div className="ml-[26px] border-b w-[8px] border-text-icon"></div>;
+          }
           return (
             <DFLink href={info.getValue()} target="_blank">
               <div className="w-4 h-4">
@@ -437,6 +475,7 @@ const UniqueTable = () => {
       containerIds: searchParams.getAll('containers'),
       containerImageIds: searchParams.getAll('containerImages'),
       clusterIds: searchParams.getAll('clusters'),
+      cve: searchParams.getAll('cveId'),
     }),
     keepPreviousData: true,
   });
@@ -506,7 +545,7 @@ const UniqueVulnerabilities = () => {
   const isFetching = useIsFetching({
     queryKey: queries.vulnerability.uniqueVulnerabilities._def,
   });
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(true);
   const [searchParams] = useSearchParams();
 
   return (
@@ -547,6 +586,7 @@ const UniqueVulnerabilities = () => {
             onClick={() => {
               setFiltersExpanded((prev) => !prev);
             }}
+            data-testid="filterButtonIdForTable"
           >
             Filter
           </Button>

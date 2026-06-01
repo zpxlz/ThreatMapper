@@ -12,17 +12,12 @@ import {
   ModelContainerImage,
   ModelProcess,
 } from '@/api/generated';
+import { DetailModal, useDetailModalState } from '@/components/detail-modal-stack';
 import { TruncatedText } from '@/components/TruncatedText';
 import { TableHeading } from '@/features/topology/components/node-details/TableHeading';
 import { formatMemory, formatPercentage } from '@/utils/number';
 
-export const ProcessTable = ({
-  processes,
-  onNodeClick,
-}: {
-  processes: ModelProcess[];
-  onNodeClick: (nodeId: string, nodeType: string) => void;
-}) => {
+export const ProcessTable = ({ processes }: { processes: ModelProcess[] }) => {
   const columnHelper = createColumnHelper<ModelProcess>();
   const [sort, setSort] = useState<SortingState>([
     {
@@ -30,6 +25,7 @@ export const ProcessTable = ({
       desc: true,
     },
   ]);
+  const { detailModalItem, setDetailModalItem } = useDetailModalState();
 
   const columns = useMemo(() => {
     return [
@@ -40,7 +36,10 @@ export const ProcessTable = ({
               className="text-text-link hover:underline w-full text-left"
               type="button"
               onClick={() => {
-                onNodeClick(cell.row.original.node_id, 'process');
+                setDetailModalItem({
+                  kind: 'process',
+                  nodeId: cell.row.original.node_id,
+                });
               }}
             >
               <TruncatedText text={cell.getValue()} />
@@ -112,17 +111,19 @@ export const ProcessTable = ({
           <TableNoDataElement text="No processes" className="min-h-[192px]" />
         }
       />
+      {detailModalItem ? (
+        <DetailModal
+          itemInfo={detailModalItem}
+          onItemClose={() => {
+            setDetailModalItem(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 };
 
-export const ContainerTable = ({
-  containers,
-  onNodeClick,
-}: {
-  containers: ModelContainer[];
-  onNodeClick: (nodeId: string, nodeType: string) => void;
-}) => {
+export const ContainerTable = ({ containers }: { containers: ModelContainer[] }) => {
   const columnHelper = createColumnHelper<ModelContainer>();
   const [sort, setSort] = useState<SortingState>([
     {
@@ -130,6 +131,7 @@ export const ContainerTable = ({
       desc: true,
     },
   ]);
+  const { detailModalItem, setDetailModalItem } = useDetailModalState();
 
   const columns = useMemo(() => {
     return [
@@ -140,7 +142,10 @@ export const ContainerTable = ({
               className="text-text-link hover:underline w-full text-left"
               type="button"
               onClick={() => {
-                onNodeClick(cell.row.original.node_id, 'container');
+                setDetailModalItem({
+                  kind: 'container',
+                  nodeId: cell.row.original.node_id,
+                });
               }}
             >
               <TruncatedText text={cell.getValue()} />
@@ -203,17 +208,19 @@ export const ContainerTable = ({
           <TableNoDataElement text="No containers" className="min-h-[192px]" />
         }
       />
+      {detailModalItem ? (
+        <DetailModal
+          itemInfo={detailModalItem}
+          onItemClose={() => {
+            setDetailModalItem(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 };
 
-export const ImageTable = ({
-  images,
-  onNodeClick,
-}: {
-  images: ModelContainerImage[];
-  onNodeClick: (nodeId: string, nodeType: string) => void;
-}) => {
+export const ImageTable = ({ images }: { images: ModelContainerImage[] }) => {
   const columnHelper = createColumnHelper<ModelContainerImage>();
   const [sort, setSort] = useState<SortingState>([
     {
@@ -221,6 +228,7 @@ export const ImageTable = ({
       desc: true,
     },
   ]);
+  const { detailModalItem, setDetailModalItem } = useDetailModalState();
 
   const columns = useMemo(() => {
     return [
@@ -231,7 +239,10 @@ export const ImageTable = ({
               className="text-text-link hover:underline w-full text-left"
               type="button"
               onClick={() => {
-                onNodeClick(cell.row.original.node_id, 'container_image');
+                setDetailModalItem({
+                  kind: 'container_image',
+                  nodeId: cell.row.original.node_id,
+                });
               }}
             >
               <TruncatedText
@@ -275,6 +286,14 @@ export const ImageTable = ({
           <TableNoDataElement text="No container images" className="min-h-[192px]" />
         }
       />
+      {detailModalItem ? (
+        <DetailModal
+          itemInfo={detailModalItem}
+          onItemClose={() => {
+            setDetailModalItem(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 };

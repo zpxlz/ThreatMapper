@@ -109,7 +109,7 @@ const getConfigBodyNotificationType = (formData: FormData, integrationType: stri
         auth_header: formBody.authKey,
       };
     case IntegrationType.awsSecurityHub: {
-      const accounts = getArrayTypeValuesFromFormData(formData, 'cloudAccountsFilter');
+      const accounts = getArrayTypeValuesFromFormData(formData, 'targetAWSAccount');
       return {
         aws_access_key: formBody.accessKey,
         aws_secret_key: formBody.secretKey,
@@ -208,6 +208,7 @@ const action = async ({ request, params }: ActionFunctionArgs): Promise<ActionDa
       node_ids: ModelNodeIdentifier[];
       fields_filters: ReportersFieldsFilters;
       container_names: string[];
+      cloud_provider?: string;
     } = {
       fields_filters: {
         compare_filter: null,
@@ -259,12 +260,18 @@ const action = async ({ request, params }: ActionFunctionArgs): Promise<ActionDa
       );
       nodeIds.push(..._clusters);
     }
+    const cloudType = formData.get('cloudType') as
+      | ModelNodeIdentifierNodeTypeEnum
+      | undefined;
+    if (_notificationType === 'CloudCompliance' && cloudType) {
+      _filters.cloud_provider = cloudType;
+    }
     if (accountIds.length) {
       const _accounts: ModelNodeIdentifier[] = accountIds.map<ModelNodeIdentifier>(
         (id) => {
           return {
             node_id: id,
-            node_type: ModelNodeIdentifierNodeTypeEnum.CloudAccount,
+            node_type: cloudType ?? ModelNodeIdentifierNodeTypeEnum.CloudAccount,
           };
         },
       );
@@ -274,9 +281,7 @@ const action = async ({ request, params }: ActionFunctionArgs): Promise<ActionDa
       const filters = _filters.fields_filters.contains_filter.filter_in;
       const newFilter = {
         ...filters,
-        [severityMap[_notificationType ?? ''] || 'severity']: severityFilter.map(
-          (severity) => severity.toLowerCase(),
-        ),
+        [severityMap[_notificationType ?? ''] || 'severity']: severityFilter,
       };
       _filters.fields_filters.contains_filter.filter_in = newFilter;
     }
@@ -318,6 +323,7 @@ const action = async ({ request, params }: ActionFunctionArgs): Promise<ActionDa
           notification_type: _notificationType,
           config: getConfigBodyNotificationType(formData, _integrationType as string),
           filters: _filters,
+          send_summary: formData.get('sendSummary') === 'on',
         },
       });
     } else {
@@ -327,6 +333,7 @@ const action = async ({ request, params }: ActionFunctionArgs): Promise<ActionDa
           notification_type: _notificationType,
           config: getConfigBodyNotificationType(formData, _integrationType as string),
           filters: _filters,
+          send_summary: formData.get('sendSummary') === 'on',
         },
       });
     }

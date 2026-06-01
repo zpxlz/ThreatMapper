@@ -32,12 +32,15 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/samber/lo"
 	"github.com/samber/mo"
+	"github.com/spf13/cast"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 const (
 	MaxSbomRequestSize      = 500 * 1e6
 	DownloadReportURLExpiry = 5 * time.Minute
+	actionMask              = "mask"
+	actionUnMask            = "unmask"
 )
 
 var (
@@ -257,6 +260,31 @@ func (h *Handler) StartVulnerabilityScanHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	scanTrigger := model.ScanTriggerCommon{}
+	for _, v := range reqs.ScanTriggerCommon.NodeIDs {
+		if v.NodeType == "container" {
+			imageID, err := GetImageFromContainerID(r.Context(), v.NodeID)
+			if err != nil {
+				log.Error().Err(err).Msg("Cannot start image scan for container")
+				continue
+			}
+			scanTrigger.NodeIDs = append(scanTrigger.NodeIDs, model.NodeIdentifier{
+				NodeID:   imageID,
+				NodeType: "image",
+			})
+		}
+	}
+
+	// Only attempt image scan if we have images to scan
+	// This is a best-effort additional scan, don't fail the whole request if it fails
+	if len(scanTrigger.NodeIDs) > 0 {
+		_, _, err = StartMultiScan(r.Context(), true, utils.NEO4JVulnerabilityScan, scanTrigger, actionBuilder)
+		if err != nil {
+			// Log the error but don't fail - the container scan already succeeded
+			log.Warn().Err(err).Msg("Failed to start image scan for container, continuing with container scan")
+		}
+	}
+
 	h.AuditUserActivity(r, EventVulnerabilityScan, ActionStart, reqs, true)
 
 	err = httpext.JSON(w, http.StatusAccepted, model.ScanTriggerResp{ScanIds: scanIDs, BulkScanID: bulkID})
@@ -397,6 +425,31 @@ func (h *Handler) StartSecretScanHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	scanTrigger := model.ScanTriggerCommon{}
+	for _, v := range reqs.ScanTriggerCommon.NodeIDs {
+		if v.NodeType == "container" {
+			imageID, err := GetImageFromContainerID(r.Context(), v.NodeID)
+			if err != nil {
+				log.Error().Err(err).Msg("Cannot start image scan for container")
+				continue
+			}
+			scanTrigger.NodeIDs = append(scanTrigger.NodeIDs, model.NodeIdentifier{
+				NodeID:   imageID,
+				NodeType: "image",
+			})
+		}
+	}
+
+	// Only attempt image scan if we have images to scan
+	// This is a best-effort additional scan, don't fail the whole request if it fails
+	if len(scanTrigger.NodeIDs) > 0 {
+		_, _, err = StartMultiScan(r.Context(), true, utils.NEO4JSecretScan, scanTrigger, actionBuilder)
+		if err != nil {
+			// Log the error but don't fail - the container scan already succeeded
+			log.Warn().Err(err).Msg("Failed to start image scan for container, continuing with container scan")
+		}
+	}
+
 	h.AuditUserActivity(r, EventSecretScan, ActionStart, reqs, true)
 
 	err = httpext.JSON(w, http.StatusAccepted, model.ScanTriggerResp{ScanIds: scanIDs, BulkScanID: bulkID})
@@ -418,7 +471,7 @@ func (h *Handler) StartComplianceScanHandler(w http.ResponseWriter, r *http.Requ
 
 	regular, k8s, _, _ := extractBulksNodes(reqs.NodeIDs)
 
-	cloudNodeIds, err := reportersScan.GetCloudAccountIDs(ctx, regular)
+	cloudNodeIds, err := reportersScan.GetCloudAccountIDs(ctx, regular, nil)
 	if err != nil {
 		h.respondError(err, w)
 		return
@@ -517,6 +570,31 @@ func (h *Handler) StartMalwareScanHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	scanTrigger := model.ScanTriggerCommon{}
+	for _, v := range reqs.ScanTriggerCommon.NodeIDs {
+		if v.NodeType == "container" {
+			imageID, err := GetImageFromContainerID(r.Context(), v.NodeID)
+			if err != nil {
+				log.Error().Err(err).Msg("Cannot start image scan for container")
+				continue
+			}
+			scanTrigger.NodeIDs = append(scanTrigger.NodeIDs, model.NodeIdentifier{
+				NodeID:   imageID,
+				NodeType: "image",
+			})
+		}
+	}
+
+	// Only attempt image scan if we have images to scan
+	// This is a best-effort additional scan, don't fail the whole request if it fails
+	if len(scanTrigger.NodeIDs) > 0 {
+		_, _, err = StartMultiScan(r.Context(), true, utils.NEO4JMalwareScan, scanTrigger, actionBuilder)
+		if err != nil {
+			// Log the error but don't fail - the container scan already succeeded
+			log.Warn().Err(err).Msg("Failed to start image scan for container, continuing with container scan")
+		}
+	}
+
 	h.AuditUserActivity(r, EventMalwareScan, ActionStart, reqs, true)
 
 	err = httpext.JSON(w, http.StatusAccepted, model.ScanTriggerResp{ScanIds: scanIDs, BulkScanID: bulkID})
@@ -552,7 +630,7 @@ func (h *Handler) SendScanStatus(
 		return
 	}
 	h.IngestChan <- &kgo.Record{
-		Topic:   scanStatusType,
+		Topic:   utils.TopicWithNamespace(scanStatusType, string(tenantID)),
 		Value:   cb,
 		Headers: rh,
 	}
@@ -1051,6 +1129,24 @@ func (h *Handler) ListVulnerabilityScanResultsHandler(w http.ResponseWriter, r *
 	}
 }
 
+func (h *Handler) ListVulnerabilityPackagesScanResultsHandler(w http.ResponseWriter, r *http.Request) {
+	entries, common, _, err := listScanResultsHandlerWithSeverityCounts[model.Vulnerability](w, r, utils.NEO4JVulnerabilityScan)
+	if err != nil {
+		h.respondError(err, w)
+		return
+	}
+	res := map[string][]model.Vulnerability{}
+	for _, entry := range entries {
+		res[entry.CveCausedByPackage] = append(res[entry.CveCausedByPackage], entry)
+	}
+
+	err = httpext.JSON(w, http.StatusOK, model.PackageVulnerabilityScanResult{
+		PackageVulnerability: res, ScanResultsCommon: common})
+	if err != nil {
+		log.Error().Msgf("%v", err)
+	}
+}
+
 func (h *Handler) ListSecretScanResultsHandler(w http.ResponseWriter, r *http.Request) {
 	entries, common, counts, err := listScanResultsHandlerWithSeverityCounts[model.Secret](w, r, utils.NEO4JSecretScan)
 	if err != nil {
@@ -1074,7 +1170,7 @@ func (h *Handler) ListSecretScanResultRulesHandler(w http.ResponseWriter, r *htt
 
 	rules := []string{}
 	for _, e := range entries {
-		rules = append(rules, e.Name)
+		rules = append(rules, e.RuleID)
 	}
 
 	err = httpext.JSON(w, http.StatusOK, model.SecretScanResultRules{Rules: lo.Uniq(rules)})
@@ -1249,9 +1345,9 @@ func (h *Handler) CountComplianceScanResultsGroupHandler(w http.ResponseWriter, 
 
 	query := `MATCH (n:ComplianceScan{node_id: $scan_id})-[:DETECTED]-(c:Compliance)-[:IS]-(r:ComplianceRule) ` +
 		reporters.ParseFieldFilters2CypherWhereConditions("c", mo.Some(req.FieldsFilter), true) +
-		` RETURN r.node_id as control_id, collect(c.status) as status`
+		` RETURN r.node_id as control_id, collect(c.status) as status, c.compliance_check_type as compliance_check_type, r.description as title`
 
-	log.Debug().Msgf("CountComplianceScanResultsGroupHandler query: %s", query)
+	log.Debug().Msgf("Count ComplianceScan Results Group Handler query: %s", query)
 
 	res, err := tx.Run(ctx, query, map[string]interface{}{"scan_id": req.ScanID})
 	if err != nil {
@@ -1265,14 +1361,19 @@ func (h *Handler) CountComplianceScanResultsGroupHandler(w http.ResponseWriter, 
 		h.respondError(err, w)
 	}
 
-	results := map[string]map[string]int64{}
+	results := map[string]model.ComplianceScanResultControlGroup{}
 
 	for _, rec := range recs {
-		results[rec.Values[0].(string)] = groupArrayToMap(rec.Values[1].([]interface{}))
+		r := model.ComplianceScanResultControlGroup{
+			Counts:         groupArrayToMap(rec.Values[1].([]interface{})),
+			BenchmarkTypes: cast.ToStringSlice(rec.Values[2].(string)),
+			ProblemTitle:   rec.Values[3].(string),
+		}
+		results[rec.Values[0].(string)] = r
 	}
 
 	err = httpext.JSON(w, http.StatusOK,
-		model.ComplinaceScanResultsGroupResp{Groups: results})
+		model.ComplianceScanResultsGroupResp{Groups: results})
 	if err != nil {
 		log.Error().Msgf("%v", err)
 	}
@@ -1320,11 +1421,19 @@ func (h *Handler) CountCloudComplianceScanResultsGroupHandler(w http.ResponseWri
 	}
 	defer tx.Close(ctx)
 
-	query := `MATCH (n:CloudComplianceScan{node_id: $scan_id})-[:DETECTED]-(c:CloudCompliance) ` +
-		reporters.ParseFieldFilters2CypherWhereConditions("c", mo.Some(req.FieldsFilter), true) +
-		` RETURN c.full_control_id as control_id, collect(c.status) as status`
+	query := `
+	MATCH (n:CloudComplianceScan{node_id: $scan_id})-[:DETECTED]-(c:CloudCompliance)
+	` + reporters.ParseFieldFilters2CypherWhereConditions("c", mo.Some(req.FieldsFilter), true) +
+		`
+	CALL {
+		WITH c
+		MATCH (e:CloudComplianceControl{control_id:c.full_control_id})
+		RETURN COLLECT(DISTINCT e.compliance_type) as compliance_type, e.problem_title as problem_title
+	}
+	RETURN c.full_control_id as control_id, collect(c.status) as status, compliance_type, problem_title
+	`
 
-	log.Debug().Msgf("CountCloudComplianceScanResultsGroupHandler query: %s", query)
+	log.Debug().Msgf("Count Cloud ComplianceScan Results Group Handler query: %s", query)
 
 	res, err := tx.Run(ctx, query, map[string]interface{}{"scan_id": req.ScanID})
 	if err != nil {
@@ -1338,14 +1447,19 @@ func (h *Handler) CountCloudComplianceScanResultsGroupHandler(w http.ResponseWri
 		h.respondError(err, w)
 	}
 
-	results := map[string]map[string]int64{}
+	results := map[string]model.ComplianceScanResultControlGroup{}
 
 	for _, rec := range recs {
-		results[rec.Values[0].(string)] = groupArrayToMap(rec.Values[1].([]interface{}))
+		r := model.ComplianceScanResultControlGroup{
+			Counts:         groupArrayToMap(rec.Values[1].([]interface{})),
+			BenchmarkTypes: cast.ToStringSlice(rec.Values[2].([]interface{})),
+			ProblemTitle:   rec.Values[3].(string),
+		}
+		results[rec.Values[0].(string)] = r
 	}
 
 	err = httpext.JSON(w, http.StatusOK,
-		model.ComplinaceScanResultsGroupResp{Groups: results})
+		model.ComplianceScanResultsGroupResp{Groups: results})
 	if err != nil {
 		log.Error().Msgf("%v", err)
 	}
@@ -2440,4 +2554,103 @@ func startMultiComplianceScan(ctx context.Context, reqs []model.NodeIdentifier, 
 		scanIDs = append(scanIDs, scanID)
 	}
 	return scanIDs, bulkID, nil
+}
+
+func UpdateRulesMasked(ctx context.Context, req model.RulesActionRequest, value bool) error {
+	driver, err := directory.Neo4jClient(ctx)
+	if err != nil {
+		return err
+	}
+	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
+	defer session.Close(ctx)
+
+	tx, err := session.BeginTransaction(ctx, neo4j.WithTxTimeout(30*time.Second))
+	if err != nil {
+		return err
+	}
+	defer tx.Close(ctx)
+
+	_, err = tx.Run(ctx, `
+		MATCH (n:DeepfenceRule)
+		WHERE n.rule_id IN $rule_ids
+		SET n.masked = $value`, map[string]interface{}{"rule_ids": req.RulesIDs, "value": value})
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (h *Handler) RulesMaskHandler(w http.ResponseWriter, r *http.Request) {
+	h.rulesActionHandler(w, r, actionMask)
+}
+
+func (h *Handler) RulesUnMaskHandler(w http.ResponseWriter, r *http.Request) {
+	h.rulesActionHandler(w, r, actionUnMask)
+}
+
+func (h *Handler) rulesActionHandler(w http.ResponseWriter, r *http.Request, action string) {
+	defer r.Body.Close()
+	var req model.RulesActionRequest
+	err := httpext.DecodeJSON(r, httpext.NoQueryParams, MaxPostRequestSize, &req)
+	if err != nil {
+		h.respondError(err, w)
+		return
+	}
+	err = h.Validator.Struct(req)
+	if err != nil {
+		h.respondError(&ValidatorError{err: err}, w)
+		return
+	}
+	switch action {
+	case actionMask:
+		err = UpdateRulesMasked(r.Context(), req, true)
+	case actionUnMask:
+		err = UpdateRulesMasked(r.Context(), req, false)
+	}
+	if err != nil {
+		h.respondError(err, w)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func GetImageFromContainerID(ctx context.Context, nodeID string) (string, error) {
+
+	ctx, span := telemetry.NewSpan(ctx, "scan-reports", "get-image-from-container-id")
+	defer span.End()
+
+	var name string
+
+	driver, err := directory.Neo4jClient(ctx)
+	if err != nil {
+		return name, err
+	}
+
+	session := driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
+	defer session.Close(ctx)
+
+	tx, err := session.BeginTransaction(ctx, neo4j.WithTxTimeout(30*time.Second))
+	if err != nil {
+		return name, err
+	}
+	defer tx.Close(ctx)
+
+	res, err := tx.Run(ctx, `
+		MATCH (n:Container{node_id:$node_id})
+		RETURN  n.docker_image_id`,
+		map[string]interface{}{"node_id": nodeID})
+	if err != nil {
+		return name, err
+	}
+
+	rec, err := res.Single(ctx)
+	if err != nil {
+		return name, err
+	}
+
+	if vi, ok := rec.Get("n.docker_image_id"); ok && vi != nil {
+		name = vi.(string)
+	}
+
+	return name, nil
 }
